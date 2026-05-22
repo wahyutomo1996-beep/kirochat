@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  kirochat:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=file:./prisma/dev.db
+      - JWT_SECRET=${JWT_SECRET:-change-this-to-random-secret}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-change-this-32-char-key-prod!!}
+      - NEXT_PUBLIC_APP_NAME=KiroChat
+    volumes:
+      - kirochat-data:/app/prisma
+    restart: unless-stopped
+
+volumes:
+  kirochat-data:

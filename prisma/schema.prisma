@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  username      String         @unique
+  password      String
+  role          String         @default("user")
+  status        String         @default("pending")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  providers     Provider[]
+  conversations Conversation[]
+  usages        Usage[]
+}
+
+model Provider {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  type        String
+  baseUrl     String
+  apiKey      String
+  models      String   @default("[]")
+  modelsLastFetched DateTime?
+  isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usages      Usage[]
+
+  @@index([userId])
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  userId    String
+  title     String    @default("New Chat")
+  model     String    @default("")
+  provider  String    @default("")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  messages  Message[]
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  role           String
+  content        String
+  images         String       @default("[]")
+  model          String       @default("")
+  promptTokens   Int          @default(0)
+  completionTokens Int        @default(0)
+  totalTokens    Int          @default(0)
+  latencyMs      Int          @default(0)
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+model Usage {
+  id               String   @id @default(cuid())
+  userId           String
+  providerId       String
+  providerName     String
+  model            String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+  latencyMs        Int      @default(0)
+  cost             Float    @default(0)
+  success          Boolean  @default(true)
+  errorMessage     String?
+  createdAt        DateTime @default(now())
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider         Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([providerId, createdAt])
+  @@index([model, createdAt])
+}
