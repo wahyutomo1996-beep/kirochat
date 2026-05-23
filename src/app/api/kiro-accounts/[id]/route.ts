@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { tryReviveAccount } from '@/lib/kiro-pool';
 
 /**
  * DELETE /api/kiro-accounts/[id] - Remove a specific Kiro account.
@@ -29,7 +30,12 @@ export async function DELETE(
 }
 
 /**
- * PATCH /api/kiro-accounts/[id] - Update account status (e.g. reactivate).
+ * PATCH /api/kiro-accounts/[id] - Update account status.
+ *
+ * When the user reactivates, we don't just blindly flip the status flag —
+ * we probe Kiro to verify the refresh token actually works. If it does,
+ * the account comes back with fresh tokens; if not, we surface the auth
+ * error so the user knows why it's still dead.
  */
 export async function PATCH(
   request: Request,
@@ -38,7 +44,7 @@ export async function PATCH(
   try {
     const session = await requireAuth();
     const { id } = params;
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
 
     const account = await prisma.kiroAccount.findFirst({
       where: { id, userId: session.userId },
@@ -47,25 +53,43 @@ export async function PATCH(
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    const updates: Record<string, unknown> = {};
     if (body.status === 'active') {
-      updates.status = 'active';
-      updates.exhaustedAt = null;
-    } else if (body.status === 'exhausted') {
-      updates.status = 'exhausted';
-      updates.exhaustedAt = new Date();
+      // Verified reactivate: actually probe Kiro to confirm token still works.
+      const result = await tryReviveAccount(id);
+      if (!result.revived) {
+        return NextResponse.json(
+          {
+            error: 'Reactivation failed - Kiro refused the refresh token',
+            detail: result.error,
+          },
+          { status: 400 },
+        );
+      }
+      const updated = await prisma.kiroAccount.findUnique({ where: { id } });
+      return NextResponse.json({
+        id: updated!.id,
+        status: updated!.status,
+        email: updated!.email,
+        revived: true,
+      });
     }
 
-    const updated = await prisma.kiroAccount.update({
-      where: { id },
-      data: updates,
-    });
+    if (body.status === 'exhausted') {
+      const updated = await prisma.kiroAccount.update({
+        where: { id },
+        data: { status: 'exhausted', exhaustedAt: new Date() },
+      });
+      return NextResponse.json({
+        id: updated.id,
+        status: updated.status,
+        email: updated.email,
+      });
+    }
 
-    return NextResponse.json({
-      id: updated.id,
-      status: updated.status,
-      email: updated.email,
-    });
+    return NextResponse.json(
+      { error: 'Unsupported status. Use "active" or "exhausted".' },
+      { status: 400 },
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Internal error';
     return NextResponse.json({ error: message }, { status: 401 });

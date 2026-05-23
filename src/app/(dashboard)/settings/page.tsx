@@ -203,11 +203,23 @@ export default function SettingsPage() {
   };
 
   const reactivateAccount = async (id: string) => {
-    await fetch(`/api/kiro-accounts/${id}`, {
+    setMessage(null);
+    const res = await fetch(`/api/kiro-accounts/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'active' }),
     });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setMessage({ type: 'success', text: 'Account revived - Kiro accepted the refresh token' });
+    } else {
+      setMessage({
+        type: 'error',
+        text: data.error
+          ? `${data.error}${data.detail ? ` (${String(data.detail).slice(0, 120)})` : ''}`
+          : 'Reactivation failed',
+      });
+    }
     fetchKiroAccounts(); fetchKiroStats();
   };
 
