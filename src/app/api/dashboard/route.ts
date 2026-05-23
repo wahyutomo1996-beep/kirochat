@@ -66,10 +66,17 @@ export async function GET(request: NextRequest) {
       .map(([model, stats]) => ({ model, ...stats, cost: Number(stats.cost.toFixed(4)) }))
       .sort((a, b) => b.requests - a.requests);
 
-    // Group by provider
+    // Group by provider. providerId may be null for the built-in
+    // Prometheus virtual provider — in that case we use a sentinel string
+    // so it groups separately and shows up clearly in the dashboard.
     const providerMap = new Map<string, { providerId: string; requests: number; tokens: number; cost: number }>();
     usages.forEach(u => {
-      const cur = providerMap.get(u.providerName) || { providerId: u.providerId, requests: 0, tokens: 0, cost: 0 };
+      const cur = providerMap.get(u.providerName) || {
+        providerId: u.providerId ?? '__prometheus__',
+        requests: 0,
+        tokens: 0,
+        cost: 0,
+      };
       cur.requests++;
       cur.tokens += u.totalTokens;
       cur.cost += u.cost;

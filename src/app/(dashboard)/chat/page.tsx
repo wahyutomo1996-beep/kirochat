@@ -31,6 +31,8 @@ interface Provider {
   models: string;
   isDefault: boolean;
   isActive: boolean;
+  builtin?: boolean;
+  accountCount?: number;
 }
 
 export default function ChatPage() {
@@ -355,7 +357,16 @@ export default function ChatPage() {
             <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value)}
               className="bg-surface-1 border border-edge text-white text-xs rounded-md px-2.5 py-1.5 focus:outline-none focus:border-edge-hover cursor-pointer hover:border-edge-hover transition-colors">
               <option value="">Select Provider</option>
-              {providers.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+              {providers.map((p) => {
+                if (p.builtin) {
+                  const count = p.accountCount ?? 0;
+                  const label = count > 0
+                    ? `${p.name} (built-in, ${count} account${count > 1 ? 's' : ''})`
+                    : `${p.name} (built-in, no accounts)`;
+                  return <option key={p.id} value={p.id} disabled={count === 0}>{label}</option>;
+                }
+                return <option key={p.id} value={p.id}>{p.name}</option>;
+              })}
             </select>
 
             <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}

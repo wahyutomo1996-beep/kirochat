@@ -33,6 +33,10 @@ export async function PUT(
         data: { isDefault: false },
       });
       updateData.isDefault = true;
+    } else if (isDefault === false) {
+      // Explicitly clear default flag (so the built-in Prometheus virtual
+      // provider can take over as default)
+      updateData.isDefault = false;
     }
 
     const updated = await prisma.provider.update({

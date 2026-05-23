@@ -3,27 +3,74 @@ import { requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { encrypt } from '@/lib/encryption';
 import { fetchModels } from '@/lib/providers';
+import { MODEL_REGISTRY } from '@/lib/models';
+
+/**
+ * Built-in virtual provider that uses the Kiro Account Pool directly.
+ * Always present in the providers list - users don't need to "add" it.
+ *
+ * Identified by id="__prometheus__". The chat handler recognizes this
+ * special ID and routes through the Kiro pool instead of the Provider
+ * table lookup.
+ */
+const PROMETHEUS_PROVIDER_ID = '__prometheus__';
+
+function buildPrometheusVirtualProvider(activeAccountCount: number) {
+  // Expose only Kiro models (the pool serves these)
+  const kiroModels = MODEL_REGISTRY
+    .filter(m => m.provider === 'kiro')
+    .map(m => m.kiroModelId!)
+    .filter(Boolean);
+
+  return {
+    id: PROMETHEUS_PROVIDER_ID,
+    name: 'Prometheus',
+    type: 'prometheus_builtin',
+    baseUrl: '',
+    models: JSON.stringify(kiroModels),
+    modelsLastFetched: new Date().toISOString(),
+    isDefault: activeAccountCount > 0,
+    isActive: activeAccountCount > 0,
+    createdAt: new Date(0).toISOString(),
+    accountCount: activeAccountCount,
+    builtin: true,
+  };
+}
 
 export async function GET() {
   try {
     const session = await requireAuth();
-    const providers = await prisma.provider.findMany({
-      where: { userId: session.userId },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-        baseUrl: true,
-        models: true,
-        modelsLastFetched: true,
-        isDefault: true,
-        isActive: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const [providers, activeAccountCount] = await Promise.all([
+      prisma.provider.findMany({
+        where: { userId: session.userId },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          baseUrl: true,
+          models: true,
+          modelsLastFetched: true,
+          isDefault: true,
+          isActive: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.kiroAccount.count({
+        where: { userId: session.userId, status: 'active' },
+      }),
+    ]);
 
-    return NextResponse.json({ providers });
+    // If user has at least one active Kiro account, the built-in provider
+    // is the default unless an explicit DB provider is marked default.
+    const hasExplicitDefault = providers.some(p => p.isDefault);
+    const builtin = buildPrometheusVirtualProvider(activeAccountCount);
+    if (hasExplicitDefault) builtin.isDefault = false;
+
+    return NextResponse.json({
+      providers: [builtin, ...providers],
+      activeKiroAccounts: activeAccountCount,
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Internal server error';
     const status = message === 'Unauthorized' || message === 'Account not approved' ? 401 : 500;

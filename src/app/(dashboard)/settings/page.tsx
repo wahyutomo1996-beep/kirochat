@@ -32,7 +32,7 @@ interface KiroAccount {
 }
 
 const PRESETS = [
-  { name: 'WIR Cloud', baseUrl: 'http://137.184.195.229:3000/v1', recommended: true },
+  { name: 'WIR Cloud', baseUrl: 'http://137.184.195.229:3000/v1' },
   { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
   { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
   { name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
@@ -286,9 +286,14 @@ curl ${baseUrl}/chat/completions \\
         <div className="bg-surface-1 border border-edge rounded-xl overflow-hidden mb-6 animate-slide-up">
           <div className="px-5 py-4 border-b border-edge flex items-center justify-between">
             <div>
-              <h2 className="text-base font-semibold text-white">Kiro Account Pool</h2>
+              <h2 className="text-base font-semibold text-white inline-flex items-center gap-2">
+                Kiro Account Pool
+                <span className="text-[9px] px-1.5 py-0.5 bg-purple-500/15 border border-purple-500/30 text-purple-300 rounded font-bold uppercase tracking-wider">Powers Prometheus</span>
+              </h2>
               <p className="text-xs text-txt-muted mt-0.5">
-                {activeAccounts} active Â· {exhaustedAccounts} exhausted Â· {kiroAccounts.length} total
+                {activeAccounts} active · {exhaustedAccounts} exhausted · {kiroAccounts.length} total
+                {' · '}
+                <span className="text-txt-faint">paste Kiro refresh tokens here — the built-in Prometheus provider auto-rotates between them</span>
               </p>
             </div>
             <Button onClick={() => setShowAddKiro(!showAddKiro)} variant="primary" size="sm">
@@ -348,8 +353,8 @@ curl ${baseUrl}/chat/completions \\
         <div className="bg-surface-1 border border-edge rounded-xl overflow-hidden mb-6 animate-slide-up">
           <div className="px-5 py-4 border-b border-edge flex items-center justify-between">
             <div>
-              <h2 className="text-base font-semibold text-white">Other Providers</h2>
-              <p className="text-xs text-txt-muted mt-0.5">Add OpenAI-compatible providers (OpenRouter, OpenAI, etc.) for chat-only use</p>
+              <h2 className="text-base font-semibold text-white">External Providers <span className="text-xs text-txt-muted font-normal">(optional)</span></h2>
+              <p className="text-xs text-txt-muted mt-0.5">Add OpenAI-compatible providers (WIR Cloud, OpenRouter, OpenAI, etc.) for use alongside the built-in Prometheus pool</p>
             </div>
             <div className="flex gap-2">
               <Button
@@ -489,19 +494,14 @@ curl ${baseUrl}/chat/completions \\
                     key={preset.name}
                     type="button"
                     onClick={() => setForm({ ...form, name: preset.name, type: 'api_key', baseUrl: preset.baseUrl })}
-                    className={preset.recommended
-                      ? 'px-3 py-1.5 text-xs font-medium border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 rounded-md hover:bg-emerald-500/20 hover:border-emerald-500/60 transition-all inline-flex items-center gap-1.5'
-                      : 'px-3 py-1.5 text-xs font-medium border border-edge text-txt-secondary rounded-md hover:text-white hover:border-edge-hover hover:bg-surface-2 transition-all'}
+                    className="px-3 py-1.5 text-xs font-medium border border-edge text-txt-secondary rounded-md hover:text-white hover:border-edge-hover hover:bg-surface-2 transition-all"
                   >
                     {preset.name}
-                    {preset.recommended && (
-                      <span className="text-[9px] px-1 py-0.5 bg-emerald-500/20 border border-emerald-500/40 rounded font-bold uppercase tracking-wide">recommended</span>
-                    )}
                   </button>
                 ))}
               </div>
               <p className="text-[11px] text-txt-faint mt-2 leading-relaxed">
-                <span className="text-emerald-400 font-medium">WIR Cloud</span> is the recommended provider — it has a multi-account pool with all Kiro models (Opus 4.7/4.6/4.5, Sonnet 4.6/4.5, etc.). For Kiro Refresh Token, use the dedicated Account Pool above instead.
+                The built-in <span className="text-white font-medium">Prometheus</span> provider (powered by your Kiro Account Pool above) is the recommended way to chat. Add an external provider only if you want to use OpenAI, OpenRouter, or other vision-capable models.
               </p>
             </div>
 

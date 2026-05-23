@@ -92,21 +92,21 @@ model Message {
 }
 
 model Usage {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   userId           String
-  providerId       String
+  providerId       String?
   providerName     String
   model            String
-  promptTokens     Int      @default(0)
-  completionTokens Int      @default(0)
-  totalTokens      Int      @default(0)
-  latencyMs        Int      @default(0)
-  cost             Float    @default(0)
-  success          Boolean  @default(true)
+  promptTokens     Int       @default(0)
+  completionTokens Int       @default(0)
+  totalTokens      Int       @default(0)
+  latencyMs        Int       @default(0)
+  cost             Float     @default(0)
+  success          Boolean   @default(true)
   errorMessage     String?
-  createdAt        DateTime @default(now())
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider         Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  createdAt        DateTime  @default(now())
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider         Provider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([providerId, createdAt])

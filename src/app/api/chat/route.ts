@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { streamChat, estimateTokens } from '@/lib/providers';
+import { streamKiroChat, type ChatMessage } from '@/lib/kiro-chat';
+import { findModel } from '@/lib/models';
 import { estimateCost } from '@/lib/pricing';
+
+const PROMETHEUS_PROVIDER_ID = '__prometheus__';
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -27,15 +31,47 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Provider and model required' }, { status: 400 });
     }
 
-    const provider = await prisma.provider.findFirst({
-      where: { id: providerId, userId: session.userId, isActive: true },
-    });
+    // ============ Built-in Prometheus provider (Kiro Pool) ============
+    //
+    // Special-cased path: instead of looking up a row in the Provider table,
+    // we route the request through the user's KiroAccount pool directly.
+    // The model id we get here is something like "claude-opus-4.7" (just the
+    // raw kiro model id), so we wrap it in "kiro/<id>" before handing off to
+    // streamKiroChat which expects the OpenAI-compatible identifier.
+    const isBuiltin = providerId === PROMETHEUS_PROVIDER_ID;
 
-    if (!provider) {
-      return NextResponse.json({ error: 'Provider not found or inactive' }, { status: 404 });
+    let provider:
+      | {
+          id: string;
+          name: string;
+          type: string;
+          baseUrl: string;
+          apiKey: string;
+        }
+      | null = null;
+
+    if (isBuiltin) {
+      const activeAccountCount = await prisma.kiroAccount.count({
+        where: { userId, status: 'active' },
+      });
+      if (activeAccountCount === 0) {
+        return NextResponse.json(
+          { error: 'Prometheus has no active Kiro accounts. Add at least one refresh token in Settings → Kiro Account Pool.' },
+          { status: 400 },
+        );
+      }
+      providerName = 'Prometheus';
+    } else {
+      provider = await prisma.provider.findFirst({
+        where: { id: providerId, userId: session.userId, isActive: true },
+      });
+
+      if (!provider) {
+        return NextResponse.json({ error: 'Provider not found or inactive' }, { status: 404 });
+      }
+
+      providerName = provider.name;
     }
-
-    providerName = provider.name;
 
     // Get or create conversation
     convId = conversationId;
@@ -45,7 +81,7 @@ export async function POST(request: NextRequest) {
           userId: session.userId,
           title: message?.slice(0, 50) || 'Image Analysis',
           model,
-          provider: provider.name,
+          provider: providerName,
         },
       });
       convId = conv.id;
@@ -65,23 +101,26 @@ export async function POST(request: NextRequest) {
     // Build messages for API.
     //
     // Image support note: Kiro/CodeWhisperer (the primary backend powering
-    // both kiro_refresh_token and WIR Cloud proxy) does NOT accept images
-    // in the JSON wire format we use. The Kiro IDE itself uses AWS SDK with
-    // binary Smithy serialization, which we can't replicate over plain HTTP.
+    // both kiro_refresh_token, the built-in Prometheus pool, and any
+    // Kiro-proxy provider) does NOT accept images in the JSON wire format
+    // we use. The Kiro IDE itself uses AWS SDK with binary Smithy
+    // serialization, which we can't replicate over plain HTTP.
     //
-    // Detection: if baseUrl points to a Kiro-backed proxy OR the provider
-    // type is kiro_refresh_token, we strip the image and append a note so
-    // the model knows the user attempted to share one.
+    // Detection: the built-in Prometheus provider OR provider type
+    // kiro_refresh_token OR baseUrl pointing at a Kiro-proxy is treated
+    // as Kiro-backed. We strip the image and append a note so the model
+    // knows the user attempted to share one.
     const dbMessages = await prisma.message.findMany({
       where: { conversationId: convId! },
       orderBy: { createdAt: 'asc' },
     });
 
     const isKiroBacked =
-      provider.type === 'kiro_refresh_token' ||
-      /amazonaws\.com|kiro|137\.184\.195\.229/i.test(provider.baseUrl || '');
+      isBuiltin ||
+      provider?.type === 'kiro_refresh_token' ||
+      /amazonaws\.com|kiro|137\.184\.195\.229/i.test(provider?.baseUrl || '');
 
-    const apiMessages = dbMessages.map((msg) => {
+    const apiMessages: ChatMessage[] = dbMessages.map((msg) => {
       const msgImages = JSON.parse(msg.images || '[]') as string[];
 
       if (msgImages.length === 0) {
@@ -89,7 +128,6 @@ export async function POST(request: NextRequest) {
       }
 
       if (isKiroBacked) {
-        // Strip images, append [user attached N image(s)] note
         const note = `\n\n[Note: user attached ${msgImages.length} image${msgImages.length > 1 ? 's' : ''} but the current backend (Kiro) doesn't support image input over its public API. Please describe the image in text or switch to a vision-capable provider.]`;
         return {
           role: msg.role as 'user' | 'assistant' | 'system',
@@ -97,19 +135,40 @@ export async function POST(request: NextRequest) {
         };
       }
 
-      // Non-Kiro provider: send images in OpenAI multimodal format
       const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
       if (msg.content) content.push({ type: 'text', text: msg.content });
       for (const img of msgImages) content.push({ type: 'image_url', image_url: { url: img } });
       return { role: msg.role as 'user' | 'assistant' | 'system', content };
     });
 
-    // Stream response
-    const { stream, getUsage } = await streamChat(
-      { type: provider.type, baseUrl: provider.baseUrl, apiKey: provider.apiKey },
-      model,
-      apiMessages,
-    );
+    // ============ Dispatch to backend ============
+    let upstreamStream: ReadableStream;
+    let getUsage: () => { promptTokens: number; completionTokens: number; totalTokens: number };
+
+    if (isBuiltin) {
+      // Route through Kiro pool. Wrap raw model id in "kiro/<id>" for the
+      // OpenAI-compatible identifier streamKiroChat expects.
+      const openaiModelId = model.startsWith('kiro/') ? model : `kiro/${model}`;
+      if (!findModel(openaiModelId)) {
+        return NextResponse.json(
+          { error: `Unknown built-in model: ${model}. Use one of the kiro/* models.` },
+          { status: 400 },
+        );
+      }
+      const result = await streamKiroChat(userId, openaiModelId, apiMessages);
+      upstreamStream = result.stream;
+      // Pool doesn't surface token counts - we estimate in flush()
+      getUsage = () => ({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+    } else {
+      // Existing path through external provider (OpenAI-compatible / WIR Cloud / etc)
+      const sc = await streamChat(
+        { type: provider!.type, baseUrl: provider!.baseUrl, apiKey: provider!.apiKey },
+        model,
+        apiMessages,
+      );
+      upstreamStream = sc.stream;
+      getUsage = sc.getUsage;
+    }
 
     let fullResponse = '';
     const encoder = new TextEncoder();
@@ -170,11 +229,13 @@ export async function POST(request: NextRequest) {
             },
           });
 
-          // Track usage
+          // Track usage. For the built-in provider we store providerId=null
+          // (Usage.providerId is optional; the FK to Provider is satisfied
+          // by either pointing at a real row or staying null).
           await prisma.usage.create({
             data: {
               userId,
-              providerId,
+              providerId: isBuiltin ? null : providerId,
               providerName,
               model,
               promptTokens: usage.promptTokens,
@@ -203,7 +264,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    stream.pipeThrough(transformStream);
+    upstreamStream.pipeThrough(transformStream);
 
     return new Response(transformStream.readable, {
       headers: {
@@ -217,12 +278,14 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : 'Internal server error';
     const status = message === 'Unauthorized' || message === 'Account not approved' ? 401 : 500;
 
-    // Track failed request
+    // Track failed request. For the virtual built-in provider we set
+    // providerId=null since '__prometheus__' isn't a real FK target.
     if (userId && providerId) {
+      const isVirtual = providerId === PROMETHEUS_PROVIDER_ID;
       await prisma.usage.create({
         data: {
           userId,
-          providerId,
+          providerId: isVirtual ? null : providerId,
           providerName: providerName || 'unknown',
           model: modelUsed || 'unknown',
           latencyMs: Date.now() - startTime,
