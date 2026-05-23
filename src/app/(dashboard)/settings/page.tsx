@@ -32,6 +32,7 @@ interface KiroAccount {
 }
 
 const PRESETS = [
+  { name: 'WIR Cloud', baseUrl: 'http://137.184.195.229:3000/v1', recommended: true },
   { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
   { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
   { name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
@@ -481,19 +482,27 @@ curl ${baseUrl}/chat/completions \\
                   onClick={() => setForm({ ...form, name: 'Kiro', type: 'kiro_refresh_token', baseUrl: '' })}
                   className="px-3 py-1.5 text-xs font-medium border border-purple-500/30 bg-purple-500/10 text-purple-300 rounded-md hover:bg-purple-500/20 hover:border-purple-500/50 transition-all"
                 >
-                  Kiro
+                  Kiro Refresh Token
                 </button>
                 {PRESETS.map((preset) => (
                   <button
                     key={preset.name}
                     type="button"
                     onClick={() => setForm({ ...form, name: preset.name, type: 'api_key', baseUrl: preset.baseUrl })}
-                    className="px-3 py-1.5 text-xs font-medium border border-edge text-txt-secondary rounded-md hover:text-white hover:border-edge-hover hover:bg-surface-2 transition-all"
+                    className={preset.recommended
+                      ? 'px-3 py-1.5 text-xs font-medium border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 rounded-md hover:bg-emerald-500/20 hover:border-emerald-500/60 transition-all inline-flex items-center gap-1.5'
+                      : 'px-3 py-1.5 text-xs font-medium border border-edge text-txt-secondary rounded-md hover:text-white hover:border-edge-hover hover:bg-surface-2 transition-all'}
                   >
                     {preset.name}
+                    {preset.recommended && (
+                      <span className="text-[9px] px-1 py-0.5 bg-emerald-500/20 border border-emerald-500/40 rounded font-bold uppercase tracking-wide">recommended</span>
+                    )}
                   </button>
                 ))}
               </div>
+              <p className="text-[11px] text-txt-faint mt-2 leading-relaxed">
+                <span className="text-emerald-400 font-medium">WIR Cloud</span> is the recommended provider — it has a multi-account pool with all Kiro models (Opus 4.7/4.6/4.5, Sonnet 4.6/4.5, etc.). For Kiro Refresh Token, use the dedicated Account Pool above instead.
+              </p>
             </div>
 
             <form onSubmit={addProvider} className="space-y-4">

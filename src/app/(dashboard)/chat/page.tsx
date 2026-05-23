@@ -125,15 +125,74 @@ export default function ChatPage() {
     const files = e.target.files;
     if (!files) return;
     Array.from(files).forEach((file) => {
-      if (file.size > 5 * 1024 * 1024) {
-        alert(`Image ${file.name} too large (max 5MB)`);
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => setImages((prev) => [...prev, reader.result as string]);
-      reader.readAsDataURL(file);
+      addImageFromFile(file);
     });
     e.target.value = '';
+  };
+
+  /**
+   * Convert a File (image) into a base64 data URL and append to the
+   * pending images list. Used by file picker, paste handler, and drag-drop.
+   */
+  const addImageFromFile = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert(`Image ${file.name || 'pasted'} too large (max 5MB)`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setImages((prev) => [...prev, reader.result as string]);
+    reader.readAsDataURL(file);
+  };
+
+  /**
+   * Capture image data on paste into the message textarea.
+   * Supports screenshots from OS, copied images from browsers, etc.
+   */
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    let pastedAny = false;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          addImageFromFile(file);
+          pastedAny = true;
+        }
+      }
+    }
+    if (pastedAny) {
+      // Prevent default paste behavior so the binary garbage doesn't end up
+      // as text in the textarea
+      e.preventDefault();
+    }
+  };
+
+  /**
+   * Drag-and-drop image support on the input container.
+   */
+  const [dragActive, setDragActive] = useState(false);
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!dragActive) setDragActive(true);
+  };
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+  };
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    const files = e.dataTransfer?.files;
+    if (!files) return;
+    Array.from(files).forEach((file) => {
+      if (file.type.startsWith('image/')) addImageFromFile(file);
+    });
   };
 
   const removeImage = (index: number) => setImages((prev) => prev.filter((_, i) => i !== index));
@@ -396,7 +455,16 @@ export default function ChatPage() {
         {/* Input */}
         <div className="p-4 border-t border-edge">
           <div className="max-w-3xl mx-auto">
-            <div className="flex items-end gap-2 bg-surface-1 border border-edge rounded-xl px-3 py-2 focus-within:border-edge-hover focus-within:ring-1 focus-within:ring-edge-hover/50 transition-all">
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`flex items-end gap-2 bg-surface-1 border rounded-xl px-3 py-2 transition-all ${
+                dragActive
+                  ? 'border-white ring-2 ring-white/30 bg-surface-2'
+                  : 'border-edge focus-within:border-edge-hover focus-within:ring-1 focus-within:ring-edge-hover/50'
+              }`}
+            >
               <button onClick={() => fileInputRef.current?.click()} className="text-txt-muted hover:text-white transition-colors p-1.5 shrink-0 self-end" title="Upload image">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
               </button>
@@ -406,7 +474,8 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                placeholder="Message..."
+                onPaste={handlePaste}
+                placeholder={dragActive ? 'Drop image here…' : 'Message… (paste or drag image)'}
                 className="flex-1 bg-transparent text-sm text-white placeholder:text-txt-ghost focus:outline-none resize-none max-h-40 leading-relaxed py-1.5"
                 rows={1}
               />
@@ -415,7 +484,11 @@ export default function ChatPage() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" /></svg>
               </button>
             </div>
-            <p className="text-[11px] text-txt-muted text-center mt-2">Press <kbd className="px-1.5 py-0.5 bg-surface-2 border border-edge rounded text-[10px]">Enter</kbd> to send · <kbd className="px-1.5 py-0.5 bg-surface-2 border border-edge rounded text-[10px]">Shift+Enter</kbd> for new line</p>
+            <p className="text-[11px] text-txt-muted text-center mt-2">
+              <kbd className="px-1.5 py-0.5 bg-surface-2 border border-edge rounded text-[10px]">Enter</kbd> send ·
+              <kbd className="px-1.5 py-0.5 bg-surface-2 border border-edge rounded text-[10px]">Shift+Enter</kbd> new line ·
+              <kbd className="px-1.5 py-0.5 bg-surface-2 border border-edge rounded text-[10px]">Ctrl+V</kbd> paste image
+            </p>
           </div>
         </div>
       </main>

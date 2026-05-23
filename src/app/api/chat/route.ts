@@ -62,21 +62,46 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Build messages for API
+    // Build messages for API.
+    //
+    // Image support note: Kiro/CodeWhisperer (the primary backend powering
+    // both kiro_refresh_token and WIR Cloud proxy) does NOT accept images
+    // in the JSON wire format we use. The Kiro IDE itself uses AWS SDK with
+    // binary Smithy serialization, which we can't replicate over plain HTTP.
+    //
+    // Detection: if baseUrl points to a Kiro-backed proxy OR the provider
+    // type is kiro_refresh_token, we strip the image and append a note so
+    // the model knows the user attempted to share one.
     const dbMessages = await prisma.message.findMany({
       where: { conversationId: convId! },
       orderBy: { createdAt: 'asc' },
     });
 
+    const isKiroBacked =
+      provider.type === 'kiro_refresh_token' ||
+      /amazonaws\.com|kiro|137\.184\.195\.229/i.test(provider.baseUrl || '');
+
     const apiMessages = dbMessages.map((msg) => {
-      const msgImages = JSON.parse(msg.images || '[]');
-      if (msgImages.length > 0) {
-        const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
-        if (msg.content) content.push({ type: 'text', text: msg.content });
-        for (const img of msgImages) content.push({ type: 'image_url', image_url: { url: img } });
-        return { role: msg.role as 'user' | 'assistant' | 'system', content };
+      const msgImages = JSON.parse(msg.images || '[]') as string[];
+
+      if (msgImages.length === 0) {
+        return { role: msg.role as 'user' | 'assistant' | 'system', content: msg.content };
       }
-      return { role: msg.role as 'user' | 'assistant' | 'system', content: msg.content };
+
+      if (isKiroBacked) {
+        // Strip images, append [user attached N image(s)] note
+        const note = `\n\n[Note: user attached ${msgImages.length} image${msgImages.length > 1 ? 's' : ''} but the current backend (Kiro) doesn't support image input over its public API. Please describe the image in text or switch to a vision-capable provider.]`;
+        return {
+          role: msg.role as 'user' | 'assistant' | 'system',
+          content: (msg.content || '') + note,
+        };
+      }
+
+      // Non-Kiro provider: send images in OpenAI multimodal format
+      const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+      if (msg.content) content.push({ type: 'text', text: msg.content });
+      for (const img of msgImages) content.push({ type: 'image_url', image_url: { url: img } });
+      return { role: msg.role as 'user' | 'assistant' | 'system', content };
     });
 
     // Stream response
