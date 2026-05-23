@@ -23,42 +23,28 @@ const KIRO_CHAT_ENDPOINT = 'https://q.us-east-1.amazonaws.com/generateAssistantR
 const KIRO_PROFILE_ARN = 'arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK';
 
 // Available Kiro models
-// NOTE: Free tier Kiro routes all requests to a single model (likely Sonnet 4).
-// The modelId field is accepted but server-side routing is controlled by Kiro.
-// These are the model IDs that Kiro IDE uses internally.
+// IDs use the lowercase-with-dot format that Kiro's CodeWhisperer backend accepts.
+// This list is kept in sync with src/lib/models.ts MODEL_REGISTRY (kiro provider entries).
 const KIRO_MODELS = [
-  // Auto (server default)
   'auto',
-  // Claude (Anthropic) - format: UPPERCASE with underscores
-  'CLAUDE_OPUS_4_20250514_V1_0',
-  'CLAUDE_SONNET_4_20250514_V1_0',
-  'CLAUDE_3_7_SONNET_20250219_V1_0',
-  'CLAUDE_HAIKU_4_5_20251001_V1_0',
+  // Claude Opus
+  'claude-opus-4.7',
+  'claude-opus-4.6',
+  'claude-opus-4.5',
+  // Claude Sonnet
+  'claude-sonnet-4.6',
+  'claude-sonnet-4.5',
+  'claude-sonnet-4',
+  // Claude Haiku
+  'claude-haiku-4.5',
   // DeepSeek
-  'DEEPSEEK_R1_V1_0',
-  'DEEPSEEK_V3_V1_0',
-  // Amazon Nova
-  'AMAZON_NOVA_PRO_V1_0',
-  'AMAZON_NOVA_LITE_V1_0',
-  'AMAZON_NOVA_PREMIER_V1_0',
-  // GLM (Zhipu)
-  'GLM_4_V1_0',
-  'GLM_4_PLUS_V1_0',
-  // Minimax
-  'MINIMAX_01_V1_0',
-  // Mistral
-  'MISTRAL_LARGE_2_V1_0',
-  // Meta Llama
-  'LLAMA_3_1_405B_V1_0',
-  'LLAMA_3_3_70B_V1_0',
-  // OpenAI
-  'GPT_4O_V1_0',
-  'GPT_4O_MINI_V1_0',
-  // Google Gemini
-  'GEMINI_2_0_FLASH_V1_0',
-  'GEMINI_1_5_PRO_V1_0',
-  // Qwen (Alibaba)
-  'QWEN_2_5_72B_V1_0',
+  'deepseek-3.2',
+  // Qwen
+  'qwen3-coder-next',
+  // MiniMax
+  'minimax-m2.5',
+  // GLM
+  'glm-5',
 ];
 
 // Cache for Kiro access tokens

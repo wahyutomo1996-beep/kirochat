@@ -3,6 +3,15 @@ import { requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { encrypt, decrypt } from '@/lib/encryption';
 import { validateKiroToken } from '@/lib/kiro-pool';
+import { createHash } from 'crypto';
+
+/**
+ * Compute a stable fingerprint for a refresh token (for duplicate detection
+ * without storing the plain token). We use SHA-256 of the original token.
+ */
+function tokenFingerprint(token: string): string {
+  return createHash('sha256').update(token).digest('hex').slice(0, 32);
+}
 
 /**
  * GET /api/kiro-accounts - List all Kiro accounts for the current user.
@@ -44,8 +53,14 @@ export async function GET() {
 
 /**
  * POST /api/kiro-accounts - Add one or more Kiro refresh tokens.
- * Body: { refreshToken: string } or { refreshTokens: string[] }
- *       Supports newline-separated tokens too.
+ *
+ * Accepts:
+ *   - { refreshToken: "tok" } - single token
+ *   - { refreshToken: "tok1\ntok2\n..." } - newline-separated batch
+ *   - { refreshTokens: ["tok1", "tok2"] } - array of tokens
+ *
+ * Each token is validated by attempting a refresh. Duplicates are detected
+ * via SHA-256 fingerprint of the original token (not the rotated one).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -67,28 +82,54 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'refreshToken required' }, { status: 400 });
     }
 
-    const added: Array<{ id: string; email: string | null }> = [];
-    const errors: Array<{ token: string; error: string }> = [];
+    // De-duplicate within the input batch first
+    const seenFp = new Set<string>();
+    tokens = tokens.filter(t => {
+      const fp = tokenFingerprint(t);
+      if (seenFp.has(fp)) return false;
+      seenFp.add(fp);
+      return true;
+    });
 
-    for (const token of tokens) {
+    // Get existing fingerprints for this user (to detect duplicates against DB)
+    const existing = await prisma.kiroAccount.findMany({
+      where: { userId: session.userId },
+      select: { refreshToken: true },
+    });
+    const existingFps = new Set<string>();
+    for (const e of existing) {
       try {
-        const validation = await validateKiroToken(token);
-        if (!validation.valid) {
-          errors.push({ token: token.slice(0, 16) + '...', error: validation.error || 'invalid' });
+        const dec = decrypt(e.refreshToken);
+        existingFps.add(tokenFingerprint(dec));
+      } catch {}
+    }
+
+    const added: Array<{ id: string; email: string | null; index: number }> = [];
+    const errors: Array<{ index: number; preview: string; error: string }> = [];
+
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      const preview = token.slice(0, 16) + '...';
+
+      try {
+        // Skip duplicate by fingerprint
+        if (existingFps.has(tokenFingerprint(token))) {
+          errors.push({ index: i, preview, error: 'duplicate (already in pool)' });
           continue;
         }
 
-        const finalRefreshToken = validation.newRefreshToken || token;
+        const validation = await validateKiroToken(token);
+        if (!validation.valid) {
+          errors.push({ index: i, preview, error: validation.error || 'invalid' });
+          continue;
+        }
 
-        // Skip duplicate (same encrypted refresh token by email)
-        if (validation.email) {
-          const existing = await prisma.kiroAccount.findFirst({
-            where: { userId: session.userId, email: validation.email },
-          });
-          if (existing) {
-            errors.push({ token: token.slice(0, 16) + '...', error: `duplicate (already exists for ${validation.email})` });
-            continue;
-          }
+        // After Kiro rotates the refresh token, also check if rotated version is dup
+        const finalRefreshToken = validation.newRefreshToken || token;
+        const rotatedFp = tokenFingerprint(finalRefreshToken);
+        if (existingFps.has(rotatedFp)) {
+          errors.push({ index: i, preview, error: 'duplicate (rotated to existing token)' });
+          continue;
         }
 
         const account = await prisma.kiroAccount.create({
@@ -101,9 +142,10 @@ export async function POST(request: NextRequest) {
             status: 'active',
           },
         });
-        added.push({ id: account.id, email: account.email });
+        added.push({ id: account.id, email: account.email, index: i });
+        existingFps.add(rotatedFp);
       } catch (e) {
-        errors.push({ token: token.slice(0, 16) + '...', error: (e as Error).message });
+        errors.push({ index: i, preview, error: (e as Error).message });
       }
     }
 
@@ -111,6 +153,7 @@ export async function POST(request: NextRequest) {
       total: added.length,
       added,
       errors,
+      summary: `${added.length} added, ${errors.length} skipped`,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Internal error';
