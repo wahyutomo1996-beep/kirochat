@@ -22,46 +22,43 @@ const KIRO_AUTH_ENDPOINT = 'https://prod.us-east-1.auth.desktop.kiro.dev/refresh
 const KIRO_CHAT_ENDPOINT = 'https://q.us-east-1.amazonaws.com/generateAssistantResponse';
 const KIRO_PROFILE_ARN = 'arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK';
 
-// Available Kiro models (verified working)
+// Available Kiro models
+// NOTE: Free tier Kiro routes all requests to a single model (likely Sonnet 4).
+// The modelId field is accepted but server-side routing is controlled by Kiro.
+// These are the model IDs that Kiro IDE uses internally.
 const KIRO_MODELS = [
-  // Auto (server picks best)
+  // Auto (server default)
   'auto',
-  // Claude (Anthropic)
-  'claude-opus-4-20250514',
-  'claude-sonnet-4-20250514',
-  'claude-3-opus-20240229',
-  'claude-3-5-sonnet-20241022',
-  'claude-3-5-haiku-20241022',
+  // Claude (Anthropic) - format: UPPERCASE with underscores
+  'CLAUDE_OPUS_4_20250514_V1_0',
+  'CLAUDE_SONNET_4_20250514_V1_0',
+  'CLAUDE_3_7_SONNET_20250219_V1_0',
+  'CLAUDE_HAIKU_4_5_20251001_V1_0',
   // DeepSeek
-  'deepseek-r1',
-  'deepseek-v3',
+  'DEEPSEEK_R1_V1_0',
+  'DEEPSEEK_V3_V1_0',
   // Amazon Nova
-  'amazon.nova-pro-v1:0',
-  'amazon.nova-lite-v1:0',
-  'amazon.nova-premier-v1:0',
+  'AMAZON_NOVA_PRO_V1_0',
+  'AMAZON_NOVA_LITE_V1_0',
+  'AMAZON_NOVA_PREMIER_V1_0',
   // GLM (Zhipu)
-  'glm-4',
-  'glm-4-plus',
+  'GLM_4_V1_0',
+  'GLM_4_PLUS_V1_0',
   // Minimax
-  'minimax-01',
-  'minimax-text-01',
+  'MINIMAX_01_V1_0',
   // Mistral
-  'mistral-large-2',
+  'MISTRAL_LARGE_2_V1_0',
   // Meta Llama
-  'llama-3.1-405b',
-  'llama-3.3-70b',
+  'LLAMA_3_1_405B_V1_0',
+  'LLAMA_3_3_70B_V1_0',
   // OpenAI
-  'gpt-4o',
-  'gpt-4o-mini',
+  'GPT_4O_V1_0',
+  'GPT_4O_MINI_V1_0',
   // Google Gemini
-  'gemini-2.0-flash',
-  'gemini-1.5-pro',
+  'GEMINI_2_0_FLASH_V1_0',
+  'GEMINI_1_5_PRO_V1_0',
   // Qwen (Alibaba)
-  'qwen-2.5-72b',
-  // Cohere
-  'cohere.command-r-plus-v1:0',
-  // Amazon Titan
-  'amazon.titan-text-premier-v2:0',
+  'QWEN_2_5_72B_V1_0',
 ];
 
 // Cache for Kiro access tokens
