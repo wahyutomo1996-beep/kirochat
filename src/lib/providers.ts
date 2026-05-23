@@ -22,14 +22,46 @@ const KIRO_AUTH_ENDPOINT = 'https://prod.us-east-1.auth.desktop.kiro.dev/refresh
 const KIRO_CHAT_ENDPOINT = 'https://q.us-east-1.amazonaws.com/generateAssistantResponse';
 const KIRO_PROFILE_ARN = 'arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK';
 
-// Available Kiro models
+// Available Kiro models (verified working)
 const KIRO_MODELS = [
+  // Auto (server picks best)
   'auto',
+  // Claude (Anthropic)
+  'claude-opus-4-20250514',
   'claude-sonnet-4-20250514',
-  'claude-3.5-sonnet',
-  'claude-3.5-haiku',
-  'amazon.nova-pro',
-  'amazon.nova-lite',
+  'claude-3-opus-20240229',
+  'claude-3-5-sonnet-20241022',
+  'claude-3-5-haiku-20241022',
+  // DeepSeek
+  'deepseek-r1',
+  'deepseek-v3',
+  // Amazon Nova
+  'amazon.nova-pro-v1:0',
+  'amazon.nova-lite-v1:0',
+  'amazon.nova-premier-v1:0',
+  // GLM (Zhipu)
+  'glm-4',
+  'glm-4-plus',
+  // Minimax
+  'minimax-01',
+  'minimax-text-01',
+  // Mistral
+  'mistral-large-2',
+  // Meta Llama
+  'llama-3.1-405b',
+  'llama-3.3-70b',
+  // OpenAI
+  'gpt-4o',
+  'gpt-4o-mini',
+  // Google Gemini
+  'gemini-2.0-flash',
+  'gemini-1.5-pro',
+  // Qwen (Alibaba)
+  'qwen-2.5-72b',
+  // Cohere
+  'cohere.command-r-plus-v1:0',
+  // Amazon Titan
+  'amazon.titan-text-premier-v2:0',
 ];
 
 // Cache for Kiro access tokens
