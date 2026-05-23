@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/Button';
@@ -19,6 +19,18 @@ interface Provider {
   isActive: boolean;
 }
 
+interface KiroAccount {
+  id: string;
+  email: string | null;
+  status: string;
+  usageCount: number;
+  lastUsed: string | null;
+  tokenExpiresAt: string | null;
+  exhaustedAt: string | null;
+  createdAt: string;
+  refreshTokenPreview: string;
+}
+
 const PRESETS = [
   { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
   { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
@@ -31,19 +43,114 @@ const PRESETS = [
 
 export default function SettingsPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [kiroAccounts, setKiroAccounts] = useState<KiroAccount[]>([]);
+  const [apiKey, setApiKey] = useState<string>('');
+  const [keyVisible, setKeyVisible] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [showDetector, setShowDetector] = useState(false);
+  const [showAddKiro, setShowAddKiro] = useState(false);
+  const [kiroTokenInput, setKiroTokenInput] = useState('');
   const [form, setForm] = useState({ name: '', type: 'api_key', baseUrl: '', apiKey: '' });
   const [loading, setLoading] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  useEffect(() => { fetchProviders().finally(() => setInitialLoad(false)); }, []);
+  useEffect(() => {
+    Promise.all([fetchProviders(), fetchKiroAccounts(), fetchApiKey()])
+      .finally(() => setInitialLoad(false));
+  }, []);
 
   const fetchProviders = async () => {
     const res = await fetch('/api/providers');
     if (res.ok) { const data = await res.json(); setProviders(data.providers); }
     else if (res.status === 401) window.location.href = '/login';
+  };
+
+  const fetchKiroAccounts = async () => {
+    const res = await fetch('/api/kiro-accounts');
+    if (res.ok) { const data = await res.json(); setKiroAccounts(data.accounts || []); }
+  };
+
+  const fetchApiKey = async () => {
+    const res = await fetch('/api/api-key');
+    if (res.ok) { const data = await res.json(); setApiKey(data.apiKey || ''); }
+  };
+
+  const regenerateApiKey = async () => {
+    if (!confirm('Regenerate your API key? All clients using the old key will stop working.')) return;
+    const res = await fetch('/api/api-key', { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      setApiKey(data.apiKey);
+      setKeyVisible(true);
+      setMessage({ type: 'success', text: 'API key regenerated' });
+    }
+  };
+
+  const copyApiKey = async () => {
+    if (!apiKey) return;
+    try {
+      await navigator.clipboard.writeText(apiKey);
+      setMessage({ type: 'success', text: 'API key copied to clipboard' });
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to copy' });
+    }
+  };
+
+  const copyBaseUrl = async () => {
+    const baseUrl = `${window.location.origin}/v1`;
+    try {
+      await navigator.clipboard.writeText(baseUrl);
+      setMessage({ type: 'success', text: 'Base URL copied' });
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to copy' });
+    }
+  };
+
+  const addKiroAccount = async () => {
+    if (!kiroTokenInput.trim()) {
+      setMessage({ type: 'error', text: 'Refresh token required' });
+      return;
+    }
+    setLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/kiro-accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: kiroTokenInput.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const parts = [];
+        if (data.total > 0) parts.push(`Added ${data.total} account(s)`);
+        if (data.errors?.length > 0) parts.push(`${data.errors.length} failed`);
+        setMessage({ type: data.total > 0 ? 'success' : 'error', text: parts.join(', ') || 'Done' });
+        setKiroTokenInput('');
+        setShowAddKiro(false);
+        fetchKiroAccounts();
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to add account' });
+      }
+    } catch (e) {
+      setMessage({ type: 'error', text: (e as Error).message });
+    }
+    setLoading(false);
+  };
+
+  const removeKiroAccount = async (id: string) => {
+    if (!confirm('Remove this Kiro account?')) return;
+    await fetch(`/api/kiro-accounts/${id}`, { method: 'DELETE' });
+    fetchKiroAccounts();
+  };
+
+  const reactivateAccount = async (id: string) => {
+    await fetch(`/api/kiro-accounts/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'active' }),
+    });
+    fetchKiroAccounts();
   };
 
   const addProvider = async (e: React.FormEvent) => {
@@ -92,6 +199,11 @@ export default function SettingsPage() {
 
   if (initialLoad) return <LoadingState fullScreen />;
 
+  const activeAccounts = kiroAccounts.filter(a => a.status === 'active').length;
+  const exhaustedAccounts = kiroAccounts.filter(a => a.status === 'exhausted').length;
+  const baseUrl = typeof window !== 'undefined' ? `${window.location.origin}/v1` : '/v1';
+  const maskedKey = apiKey ? `${apiKey.slice(0, 8)}${'\u2022'.repeat(32)}${apiKey.slice(-6)}` : 'No key';
+
   return (
     <div className="min-h-screen bg-surface-0">
       <div className="max-w-3xl mx-auto px-6 py-8">
@@ -99,10 +211,10 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between mb-8 animate-fade-in">
           <div>
             <h1 className="text-2xl font-semibold text-white">Settings</h1>
-            <p className="text-txt-muted text-sm mt-1">Manage your AI providers and API keys</p>
+            <p className="text-txt-muted text-sm mt-1">Manage your AI providers, Kiro accounts, and API access</p>
           </div>
           <a href="/chat">
-            <Button variant="secondary" size="sm">← Back to Chat</Button>
+            <Button variant="secondary" size="sm">â† Back to Chat</Button>
           </a>
         </div>
 
@@ -112,12 +224,131 @@ export default function SettingsPage() {
           </div>
         )}
 
+        {/* API Key Section - OpenAI-compatible access */}
+        <div className="bg-surface-1 border border-edge rounded-xl overflow-hidden mb-6 animate-slide-up">
+          <div className="px-5 py-4 border-b border-edge">
+            <h2 className="text-base font-semibold text-white">Your API Key</h2>
+            <p className="text-xs text-txt-muted mt-0.5">Use Prometheus as a provider in any OpenAI-compatible client</p>
+          </div>
+          <div className="p-5 space-y-4">
+            <div>
+              <label className="block text-[11px] font-semibold text-txt-muted mb-1.5 uppercase tracking-wider">Base URL</label>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 px-3 py-2 bg-surface-2 border border-edge rounded-lg text-sm text-white font-mono break-all">{baseUrl}</code>
+                <Button onClick={copyBaseUrl} variant="ghost" size="sm">Copy</Button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-txt-muted mb-1.5 uppercase tracking-wider">API Key</label>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 px-3 py-2 bg-surface-2 border border-edge rounded-lg text-sm text-white font-mono break-all">
+                  {keyVisible ? apiKey : maskedKey}
+                </code>
+                <Button onClick={() => setKeyVisible(!keyVisible)} variant="ghost" size="sm">
+                  {keyVisible ? 'Hide' : 'Show'}
+                </Button>
+                <Button onClick={copyApiKey} variant="ghost" size="sm">Copy</Button>
+                <Button onClick={regenerateApiKey} variant="outline" size="sm">Regenerate</Button>
+              </div>
+              <p className="text-[11px] text-txt-faint mt-2">
+                Use this key with any OpenAI SDK. Set <code className="text-txt-secondary">OPENAI_API_KEY</code> and <code className="text-txt-secondary">OPENAI_BASE_URL</code> to the values above.
+              </p>
+            </div>
+            <details className="group/sample">
+              <summary className="cursor-pointer text-xs text-txt-muted hover:text-white inline-flex items-center gap-1">
+                <svg className="w-3 h-3 transition-transform group-open/sample:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                Sample code (Python / curl)
+              </summary>
+              <div className="mt-3 space-y-2">
+                <pre className="text-[11px] bg-surface-2 border border-edge rounded p-3 overflow-x-auto text-txt-secondary font-mono"><code>{`# Python (openai SDK)
+from openai import OpenAI
+client = OpenAI(api_key="${apiKey || 'pmt-...'}", base_url="${baseUrl}")
+r = client.chat.completions.create(
+    model="kiro/claude-opus-4.7",
+    messages=[{"role": "user", "content": "Hello"}],
+)
+print(r.choices[0].message.content)`}</code></pre>
+                <pre className="text-[11px] bg-surface-2 border border-edge rounded p-3 overflow-x-auto text-txt-secondary font-mono"><code>{`# curl
+curl ${baseUrl}/chat/completions \\
+  -H "Authorization: Bearer ${apiKey || 'pmt-...'}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "kiro/claude-opus-4.7",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'`}</code></pre>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        {/* Kiro Account Pool */}
+        <div className="bg-surface-1 border border-edge rounded-xl overflow-hidden mb-6 animate-slide-up">
+          <div className="px-5 py-4 border-b border-edge flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-white">Kiro Account Pool</h2>
+              <p className="text-xs text-txt-muted mt-0.5">
+                {activeAccounts} active Â· {exhaustedAccounts} exhausted Â· {kiroAccounts.length} total
+              </p>
+            </div>
+            <Button onClick={() => setShowAddKiro(!showAddKiro)} variant="primary" size="sm">
+              {showAddKiro ? 'Cancel' : '+ Add Account'}
+            </Button>
+          </div>
+
+          {showAddKiro && (
+            <div className="px-5 py-4 border-b border-edge bg-surface-2">
+              <label className="block text-[11px] font-semibold text-txt-muted mb-1.5 uppercase tracking-wider">Refresh Token (one per line)</label>
+              <textarea
+                value={kiroTokenInput}
+                onChange={(e) => setKiroTokenInput(e.target.value)}
+                placeholder="aorAAAAA..."
+                rows={3}
+                className="w-full px-3 py-2 bg-surface-1 border border-edge rounded-lg text-sm text-white font-mono focus:outline-none focus:border-edge-hover transition-colors"
+              />
+              <div className="flex gap-2 mt-3">
+                <Button onClick={addKiroAccount} loading={loading} variant="primary" size="sm">Add to Pool</Button>
+                <Button onClick={() => { setShowAddKiro(false); setKiroTokenInput(''); }} variant="secondary" size="sm">Cancel</Button>
+              </div>
+            </div>
+          )}
+
+          {kiroAccounts.length === 0 ? (
+            <div className="px-5 py-12 text-center">
+              <p className="text-white text-sm font-medium">No Kiro accounts</p>
+              <p className="text-txt-muted text-xs mt-1">Add at least one Kiro refresh token to use kiro/* models via the API</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-edge">
+              {kiroAccounts.map((a) => (
+                <div key={a.id} className="px-5 py-3 hover:bg-surface-2 transition-colors flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <Badge variant={a.status === 'active' ? 'success' : 'danger'}>{a.status}</Badge>
+                      <span className="text-sm text-white truncate">{a.email || '(no email)'}</span>
+                    </div>
+                    <p className="text-[11px] text-txt-muted">
+                      <code className="font-mono">{a.refreshTokenPreview}</code> Â· used {a.usageCount} times
+                      {a.lastUsed && ` Â· last ${new Date(a.lastUsed).toLocaleString('id-ID')}`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {a.status !== 'active' && (
+                      <Button onClick={() => reactivateAccount(a.id)} variant="ghost" size="xs">Reactivate</Button>
+                    )}
+                    <Button onClick={() => removeKiroAccount(a.id)} variant="danger" size="xs">Remove</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Provider List */}
         <div className="bg-surface-1 border border-edge rounded-xl overflow-hidden mb-6 animate-slide-up">
           <div className="px-5 py-4 border-b border-edge flex items-center justify-between">
             <div>
-              <h2 className="text-base font-semibold text-white">API Providers</h2>
-              <p className="text-xs text-txt-muted mt-0.5">Add Kiro tokens or any OpenAI-compatible provider</p>
+              <h2 className="text-base font-semibold text-white">Other Providers</h2>
+              <p className="text-xs text-txt-muted mt-0.5">Add OpenAI-compatible providers (OpenRouter, OpenAI, etc.) for chat-only use</p>
             </div>
             <div className="flex gap-2">
               <Button
@@ -167,7 +398,7 @@ export default function SettingsPage() {
                         )}
                       </div>
                       <p className="text-xs text-txt-muted truncate">
-                        {p.type === 'kiro_refresh_token' ? 'Kiro Refresh Token' : 'API Key'} · <span className="font-mono">{p.baseUrl || 'https://api.kiro.dev/v1'}</span>
+                        {p.type === 'kiro_refresh_token' ? 'Kiro Refresh Token' : 'API Key'} Â· <span className="font-mono">{p.baseUrl || 'https://api.kiro.dev/v1'}</span>
                       </p>
                       {p.modelsLastFetched && (
                         <p className="text-[11px] text-txt-faint mt-1">
@@ -176,7 +407,7 @@ export default function SettingsPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <Button onClick={() => refreshModels(p.id)} variant="ghost" size="xs" title="Re-fetch models">↻ Refresh</Button>
+                      <Button onClick={() => refreshModels(p.id)} variant="ghost" size="xs" title="Re-fetch models">â†» Refresh</Button>
                       {!p.isDefault && (
                         <Button onClick={() => setDefault(p.id)} variant="ghost" size="xs">Set Default</Button>
                       )}

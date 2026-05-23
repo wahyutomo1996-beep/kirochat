@@ -82,7 +82,7 @@ async function getKiroAccessToken(refreshToken: string): Promise<{ accessToken: 
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'User-Agent': 'KiroChat/1.0',
+      'User-Agent': 'Prometheus/1.0',
     },
     body: JSON.stringify({ refreshToken }),
   });

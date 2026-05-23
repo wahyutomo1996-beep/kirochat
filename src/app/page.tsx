@@ -18,7 +18,7 @@ export default function Home() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
             </svg>
           </div>
-          <span className="text-white font-semibold text-lg tracking-tight">KiroChat</span>
+          <span className="text-white font-semibold text-lg tracking-tight">Prometheus</span>
         </div>
         <div className="flex items-center gap-3">
           <Link href="/login" className="text-sm text-txt-secondary hover:text-white transition-colors px-3 py-1.5">
@@ -98,8 +98,8 @@ curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 sudo apt install -y nodejs git
 
 # Clone & setup
-git clone https://github.com/wahyutomo1996-beep/kirochat.git /opt/kirochat
-cd /opt/kirochat
+git clone https://github.com/wahyutomo1996-beep/prometheus.git /opt/prometheus
+cd /opt/prometheus
 npm install
 
 # Configure
@@ -114,14 +114,14 @@ npm run build
 
 # Run (background with PM2)
 sudo npm i -g pm2
-pm2 start npm --name kirochat -- start
+pm2 start npm --name prometheus -- start
 pm2 save && pm2 startup`}</code></pre>
           </div>
 
           <div className="mt-6 grid md:grid-cols-2 gap-3">
             <div className="bg-surface-1 border border-edge rounded-lg p-4">
               <p className="text-xs text-txt-muted uppercase tracking-wider font-semibold mb-1">Default Login</p>
-              <p className="text-sm text-white font-mono">admin@kirochat.local</p>
+              <p className="text-sm text-white font-mono">admin@prometheus.local</p>
               <p className="text-sm text-txt-secondary font-mono">admin123</p>
             </div>
             <div className="bg-surface-1 border border-edge rounded-lg p-4">
@@ -136,9 +136,9 @@ pm2 save && pm2 startup`}</code></pre>
       {/* Footer */}
       <footer className="border-t border-edge px-6 py-6">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <p className="text-xs text-txt-muted">KiroChat — Self-hosted AI Chat</p>
+          <p className="text-xs text-txt-muted">Prometheus — Self-hosted AI Chat & API Gateway</p>
           <div className="flex items-center gap-4">
-            <a href="https://github.com/wahyutomo1996-beep/kirochat" target="_blank" rel="noopener" className="text-xs text-txt-muted hover:text-white transition-colors">GitHub</a>
+            <a href="https://github.com/wahyutomo1996-beep/prometheus" target="_blank" rel="noopener" className="text-xs text-txt-muted hover:text-white transition-colors">GitHub</a>
           </div>
         </div>
       </footer>

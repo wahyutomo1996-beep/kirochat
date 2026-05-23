@@ -1,18 +1,18 @@
 version: '3.8'
 
 services:
-  kirochat:
+  prometheus:
     build: .
-    container_name: kirochat
+    container_name: prometheus
     ports:
       - "3000:3000"
     environment:
-      - DATABASE_URL=file:/app/data/kirochat.db
+      - DATABASE_URL=file:/app/data/prometheus.db
       - JWT_SECRET=${JWT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - NEXT_PUBLIC_APP_NAME=KiroChat
+      - NEXT_PUBLIC_APP_NAME=Prometheus
     volumes:
-      - kirochat-data:/app/data
+      - prometheus-data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/login"]
@@ -22,5 +22,5 @@ services:
       start_period: 10s
 
 volumes:
-  kirochat-data:
+  prometheus-data:
     driver: local

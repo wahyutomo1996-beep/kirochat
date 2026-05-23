@@ -14,11 +14,13 @@ model User {
   password      String
   role          String         @default("user")
   status        String         @default("pending")
+  apiKey        String?        @unique
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   providers     Provider[]
   conversations Conversation[]
   usages        Usage[]
+  kiroAccounts  KiroAccount[]
 }
 
 model Provider {
@@ -38,6 +40,24 @@ model Provider {
   usages      Usage[]
 
   @@index([userId])
+}
+
+model KiroAccount {
+  id              String    @id @default(cuid())
+  userId          String
+  refreshToken    String
+  accessToken     String?
+  tokenExpiresAt  DateTime?
+  email           String?
+  status          String    @default("active")
+  usageCount      Int       @default(0)
+  lastUsed        DateTime?
+  exhaustedAt    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
 }
 
 model Conversation {

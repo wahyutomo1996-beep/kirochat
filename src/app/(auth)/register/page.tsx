@@ -46,7 +46,7 @@ export default function RegisterPage() {
             </svg>
           </div>
           <h1 className="text-2xl font-semibold text-white tracking-tight">Create Account</h1>
-          <p className="text-txt-muted text-sm mt-2">Request access to KiroChat</p>
+          <p className="text-txt-muted text-sm mt-2">Request access to Prometheus</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

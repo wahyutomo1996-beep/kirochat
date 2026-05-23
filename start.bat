@@ -1,8 +1,8 @@
 @echo off
-title KiroChat Dev Server
+title Prometheus Dev Server
 echo.
 echo  ========================================
-echo   KiroChat - Multi-Provider AI Chat
+echo   Prometheus - Multi-Provider AI Gateway
 echo  ========================================
 echo.
 echo  Cleaning cache...
@@ -10,7 +10,7 @@ if exist ".next" rmdir /s /q ".next"
 echo.
 echo  Starting dev server...
 echo  URL: http://localhost:3000
-echo  Login: admin@kirochat.local / admin123
+echo  Login: admin@prometheus.local / admin123
 echo.
 echo  Press Ctrl+C to stop
 echo  ========================================

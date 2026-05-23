@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
+import { randomBytes } from 'crypto';
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'fallback-secret');
 
@@ -51,4 +52,10 @@ export async function requireAdmin(): Promise<JWTPayload> {
     throw new Error('Admin access required');
   }
   return session;
+}
+
+// Generate API key for OpenAI-compatible access
+// Format: pmt-<random32hex> (Prometheus prefix)
+export function generateApiKey(): string {
+  return 'pmt-' + randomBytes(24).toString('hex');
 }
