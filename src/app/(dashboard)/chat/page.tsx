@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/Button';
 import { LoadingState } from '@/components/LoadingState';
+import { isKiroBacked, pickVisionFallback, type ProviderLike } from '@/lib/vision';
 
 interface Message {
   id: string;
@@ -47,6 +48,7 @@ export default function ChatPage() {
   const [models, setModels] = useState<string[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [streamContent, setStreamContent] = useState('');
+  const [routingNotice, setRoutingNotice] = useState<{ from: string; to: string; model: string } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [user, setUser] = useState<{ username: string; role: string } | null>(null);
   const [initialLoad, setInitialLoad] = useState(true);
@@ -208,7 +210,7 @@ export default function ChatPage() {
 
     const userMessage = input;
     const userImages = [...images];
-    setInput(''); setImages([]); setStreaming(true); setStreamContent('');
+    setInput(''); setImages([]); setStreaming(true); setStreamContent(''); setRoutingNotice(null);
 
     const tempMsg: Message = { id: 'temp-' + Date.now(), role: 'user', content: userMessage, images: JSON.stringify(userImages), model: selectedModel, createdAt: new Date().toISOString() };
     setMessages((prev) => [...prev, tempMsg]);
@@ -239,14 +241,20 @@ export default function ChatPage() {
         if (done) break;
         const text = decoder.decode(value);
         for (const line of text.split('\n')) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
-            try {
-              const p = JSON.parse(data);
-              if (p.content) { fullContent += p.content; setStreamContent(fullContent); }
-            } catch {}
-          }
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6);
+          if (data === '[DONE]') continue;
+          try {
+            const p = JSON.parse(data);
+            if (p.rerouted) {
+              setRoutingNotice({ from: p.from, to: p.to, model: p.model });
+              continue;
+            }
+            if (p.content) {
+              fullContent += p.content;
+              setStreamContent(fullContent);
+            }
+          } catch { /* malformed chunk */ }
         }
       }
 
@@ -289,6 +297,22 @@ export default function ChatPage() {
   if (initialLoad) {
     return <LoadingState fullScreen message="Loading workspace..." />;
   }
+
+  // Determine if attaching images on the current selection will silently
+  // strip them. We mirror the backend logic: Kiro-backed + no vision
+  // fallback among the user's external providers = warn the user.
+  const selectedProviderObj = providers.find(p => p.id === selectedProvider);
+  const selectedIsKiroBacked = selectedProviderObj
+    ? isKiroBacked(
+        selectedProviderObj as ProviderLike,
+        Boolean(selectedProviderObj.builtin),
+      )
+    : false;
+  const visionFallback = selectedIsKiroBacked
+    ? pickVisionFallback(providers.filter(p => !p.builtin) as ProviderLike[])
+    : null;
+  const imagesWillFail = images.length > 0 && selectedIsKiroBacked && !visionFallback;
+  const imagesWillReroute = images.length > 0 && selectedIsKiroBacked && visionFallback;
 
   return (
     <div className="flex h-screen bg-surface-0 overflow-hidden">
@@ -425,6 +449,19 @@ export default function ChatPage() {
                 </div>
               ))}
 
+              {routingNotice && (
+                <div className="animate-fade-in mb-2">
+                  <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg px-3 py-2 text-xs text-blue-300 inline-flex items-center gap-2">
+                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    <span>
+                      Image detected. {routingNotice.from} can&apos;t see images, so this message routes to{' '}
+                      <span className="font-medium text-blue-200">{routingNotice.to}</span>
+                      {' '}<span className="text-blue-400/60">({routingNotice.model})</span>
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {streaming && streamContent && (
                 <div className="animate-fade-in">
                   <div className="max-w-[90%] w-full">
@@ -460,6 +497,21 @@ export default function ChatPage() {
                 </div>
               ))}
             </div>
+
+            {imagesWillReroute && visionFallback && (
+              <p className="mt-2 text-[11px] text-blue-300/90 leading-relaxed">
+                <span className="font-medium">Heads up:</span> {selectedProviderObj?.name} can&apos;t see images.
+                This message will route to <span className="text-blue-200 font-medium">{visionFallback.provider.name}</span>{' '}
+                <span className="text-blue-400/60">({visionFallback.model})</span> instead.
+              </p>
+            )}
+            {imagesWillFail && (
+              <p className="mt-2 text-[11px] text-amber-300/90 leading-relaxed">
+                <span className="font-medium">Image will be ignored.</span> {selectedProviderObj?.name} can&apos;t see images
+                and you don&apos;t have a vision-capable provider configured.{' '}
+                <a href="/settings" className="underline hover:text-amber-200">Add OpenAI or Gemini in Settings</a> to enable image analysis.
+              </p>
+            )}
           </div>
         )}
 

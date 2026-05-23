@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { encrypt } from '@/lib/encryption';
 import { fetchModels } from '@/lib/providers';
 import { MODEL_REGISTRY } from '@/lib/models';
+import { PROMETHEUS_PROVIDER_ID } from '@/lib/constants';
+import { apiError } from '@/lib/http';
 
 /**
  * Built-in virtual provider that uses the Kiro Account Pool directly.
@@ -13,7 +15,6 @@ import { MODEL_REGISTRY } from '@/lib/models';
  * special ID and routes through the Kiro pool instead of the Provider
  * table lookup.
  */
-const PROMETHEUS_PROVIDER_ID = '__prometheus__';
 
 function buildPrometheusVirtualProvider(activeAccountCount: number) {
   // Expose only Kiro models (the pool serves these)
@@ -72,9 +73,7 @@ export async function GET() {
       activeKiroAccounts: activeAccountCount,
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal server error';
-    const status = message === 'Unauthorized' || message === 'Account not approved' ? 401 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return apiError(error);
   }
 }
 
@@ -133,8 +132,6 @@ export async function POST(request: NextRequest) {
         : 'Provider added but no models detected. Try refreshing manually.',
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal server error';
-    const status = message === 'Unauthorized' || message === 'Account not approved' ? 401 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return apiError(error);
   }
 }

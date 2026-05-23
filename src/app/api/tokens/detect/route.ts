@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { scanFilesystem, parseTokenData, validateRefreshToken } from '@/lib/token-detector';
+import { apiError } from '@/lib/http';
 
 /**
  * GET /api/tokens/detect
@@ -25,9 +26,7 @@ export async function GET() {
       count: tokens.length,
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal server error';
-    const status = message === 'Unauthorized' || message === 'Account not approved' ? 401 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return apiError(error);
   }
 }
 
@@ -107,8 +106,6 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal server error';
-    const status = message === 'Unauthorized' || message === 'Account not approved' ? 401 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return apiError(error);
   }
 }

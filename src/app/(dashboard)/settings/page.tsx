@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/Button';
@@ -215,7 +215,7 @@ export default function SettingsPage() {
             <p className="text-txt-muted text-sm mt-1">Manage your AI providers, Kiro accounts, and API access</p>
           </div>
           <a href="/chat">
-            <Button variant="secondary" size="sm">â† Back to Chat</Button>
+            <Button variant="secondary" size="sm">&larr; Back to Chat</Button>
           </a>
         </div>
 
@@ -333,8 +333,8 @@ curl ${baseUrl}/chat/completions \\
                       <span className="text-sm text-white truncate">{a.email || '(no email)'}</span>
                     </div>
                     <p className="text-[11px] text-txt-muted">
-                      <code className="font-mono">{a.refreshTokenPreview}</code> Â· used {a.usageCount} times
-                      {a.lastUsed && ` Â· last ${new Date(a.lastUsed).toLocaleString('id-ID')}`}
+                      <code className="font-mono">{a.refreshTokenPreview}</code> &middot; used {a.usageCount} times
+                      {a.lastUsed && ` &middot; last ${new Date(a.lastUsed).toLocaleString('id-ID')}`}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -404,7 +404,7 @@ curl ${baseUrl}/chat/completions \\
                         )}
                       </div>
                       <p className="text-xs text-txt-muted truncate">
-                        {p.type === 'kiro_refresh_token' ? 'Kiro Refresh Token' : 'API Key'} Â· <span className="font-mono">{p.baseUrl || 'https://api.kiro.dev/v1'}</span>
+                        {p.type === 'kiro_refresh_token' ? 'Kiro Refresh Token' : 'API Key'} &middot; <span className="font-mono">{p.baseUrl || 'https://api.kiro.dev/v1'}</span>
                       </p>
                       {p.modelsLastFetched && (
                         <p className="text-[11px] text-txt-faint mt-1">
@@ -413,7 +413,7 @@ curl ${baseUrl}/chat/completions \\
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <Button onClick={() => refreshModels(p.id)} variant="ghost" size="xs" title="Re-fetch models">â†» Refresh</Button>
+                      <Button onClick={() => refreshModels(p.id)} variant="ghost" size="xs" title="Re-fetch models">&#x21BB; Refresh</Button>
                       {!p.isDefault && (
                         <Button onClick={() => setDefault(p.id)} variant="ghost" size="xs">Set Default</Button>
                       )}
