@@ -31,6 +31,35 @@ interface KiroAccount {
   refreshTokenPreview: string;
 }
 
+interface KiroAccountStats {
+  id: string;
+  email: string | null;
+  status: string;
+  createdAt: string;
+  lastUsed: string | null;
+  totalRequests: number;
+  totalTokens: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  failedRequests: number;
+  todayRequests: number;
+  todayTokens: number;
+  weekRequests: number;
+  weekTokens: number;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  exhaustedAt: string | null;
+}
+
+interface KiroSummary {
+  totalAccounts: number;
+  activeAccounts: number;
+  exhaustedAccounts: number;
+  totalTokensToday: number;
+  totalTokensWeek: number;
+  totalTokensAllTime: number;
+}
+
 const PRESETS = [
   { name: 'WIR Cloud', baseUrl: 'http://137.184.195.229:3000/v1' },
   { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
@@ -42,9 +71,22 @@ const PRESETS = [
   { name: 'Together AI', baseUrl: 'https://api.together.xyz/v1' },
 ];
 
+/**
+ * Format a raw token count into a human-friendly short string.
+ * 1234 -> "1.2K", 1234567 -> "1.2M".
+ */
+function formatTokens(n: number): string {
+  if (!n) return '0';
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return (n / 1000).toFixed(n < 10_000 ? 1 : 0).replace(/\.0$/, '') + 'K';
+  return (n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0).replace(/\.0$/, '') + 'M';
+}
+
 export default function SettingsPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [kiroAccounts, setKiroAccounts] = useState<KiroAccount[]>([]);
+  const [kiroStats, setKiroStats] = useState<KiroAccountStats[]>([]);
+  const [kiroSummary, setKiroSummary] = useState<KiroSummary | null>(null);
   const [apiKey, setApiKey] = useState<string>('');
   const [keyVisible, setKeyVisible] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -57,8 +99,14 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
-    Promise.all([fetchProviders(), fetchKiroAccounts(), fetchApiKey()])
+    Promise.all([fetchProviders(), fetchKiroAccounts(), fetchKiroStats(), fetchApiKey()])
       .finally(() => setInitialLoad(false));
+  }, []);
+
+  // Auto-refresh Kiro stats every 30s so the credit display stays close to live
+  useEffect(() => {
+    const id = setInterval(() => { fetchKiroStats(); }, 30_000);
+    return () => clearInterval(id);
   }, []);
 
   const fetchProviders = async () => {
@@ -70,6 +118,15 @@ export default function SettingsPage() {
   const fetchKiroAccounts = async () => {
     const res = await fetch('/api/kiro-accounts');
     if (res.ok) { const data = await res.json(); setKiroAccounts(data.accounts || []); }
+  };
+
+  const fetchKiroStats = async () => {
+    const res = await fetch('/api/kiro-accounts/usage');
+    if (res.ok) {
+      const data = await res.json();
+      setKiroStats(data.accounts || []);
+      setKiroSummary(data.summary || null);
+    }
   };
 
   const fetchApiKey = async () => {
@@ -129,7 +186,7 @@ export default function SettingsPage() {
         setMessage({ type: data.total > 0 ? 'success' : 'error', text: parts.join(', ') || 'Done' });
         setKiroTokenInput('');
         setShowAddKiro(false);
-        fetchKiroAccounts();
+        fetchKiroAccounts(); fetchKiroStats();
       } else {
         setMessage({ type: 'error', text: data.error || 'Failed to add account' });
       }
@@ -142,7 +199,7 @@ export default function SettingsPage() {
   const removeKiroAccount = async (id: string) => {
     if (!confirm('Remove this Kiro account?')) return;
     await fetch(`/api/kiro-accounts/${id}`, { method: 'DELETE' });
-    fetchKiroAccounts();
+    fetchKiroAccounts(); fetchKiroStats();
   };
 
   const reactivateAccount = async (id: string) => {
@@ -151,7 +208,7 @@ export default function SettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'active' }),
     });
-    fetchKiroAccounts();
+    fetchKiroAccounts(); fetchKiroStats();
   };
 
   const addProvider = async (e: React.FormEvent) => {
@@ -291,7 +348,7 @@ curl ${baseUrl}/chat/completions \\
                 <span className="text-[9px] px-1.5 py-0.5 bg-purple-500/15 border border-purple-500/30 text-purple-300 rounded font-bold uppercase tracking-wider">Powers Prometheus</span>
               </h2>
               <p className="text-xs text-txt-muted mt-0.5">
-                {activeAccounts} active · {exhaustedAccounts} exhausted · {kiroAccounts.length} total
+                {activeAccounts} active &middot; {exhaustedAccounts} exhausted &middot; {kiroAccounts.length} total
                 {' · '}
                 <span className="text-txt-faint">paste Kiro refresh tokens here — the built-in Prometheus provider auto-rotates between them</span>
               </p>
@@ -300,6 +357,24 @@ curl ${baseUrl}/chat/completions \\
               {showAddKiro ? 'Cancel' : '+ Add Account'}
             </Button>
           </div>
+
+          {/* Pool-wide credit summary */}
+          {kiroSummary && kiroSummary.totalAccounts > 0 && (
+            <div className="px-5 py-3 border-b border-edge bg-surface-2 grid grid-cols-3 gap-4">
+              <div>
+                <p className="text-[10px] text-txt-muted uppercase tracking-wider mb-0.5">Tokens today</p>
+                <p className="text-base font-semibold text-white tabular-nums">{formatTokens(kiroSummary.totalTokensToday)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-txt-muted uppercase tracking-wider mb-0.5">Last 7 days</p>
+                <p className="text-base font-semibold text-white tabular-nums">{formatTokens(kiroSummary.totalTokensWeek)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-txt-muted uppercase tracking-wider mb-0.5">All-time</p>
+                <p className="text-base font-semibold text-white tabular-nums">{formatTokens(kiroSummary.totalTokensAllTime)}</p>
+              </div>
+            </div>
+          )}
 
           {showAddKiro && (
             <div className="px-5 py-4 border-b border-edge bg-surface-2">
@@ -325,26 +400,79 @@ curl ${baseUrl}/chat/completions \\
             </div>
           ) : (
             <div className="divide-y divide-edge">
-              {kiroAccounts.map((a) => (
-                <div key={a.id} className="px-5 py-3 hover:bg-surface-2 transition-colors flex items-center justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <Badge variant={a.status === 'active' ? 'success' : 'danger'}>{a.status}</Badge>
-                      <span className="text-sm text-white truncate">{a.email || '(no email)'}</span>
+              {kiroAccounts.map((a) => {
+                const stats = kiroStats.find(s => s.id === a.id);
+                return (
+                <div key={a.id} className="px-5 py-3 hover:bg-surface-2 transition-colors">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant={a.status === 'active' ? 'success' : 'danger'}>{a.status}</Badge>
+                        <span className="text-sm text-white truncate">{a.email || '(no email)'}</span>
+                      </div>
+                      <p className="text-[11px] text-txt-muted">
+                        <code className="font-mono">{a.refreshTokenPreview}</code>
+                        {a.lastUsed && ` · last used ${new Date(a.lastUsed).toLocaleString('id-ID')}`}
+                      </p>
                     </div>
-                    <p className="text-[11px] text-txt-muted">
-                      <code className="font-mono">{a.refreshTokenPreview}</code> &middot; used {a.usageCount} times
-                      {a.lastUsed && ` &middot; last ${new Date(a.lastUsed).toLocaleString('id-ID')}`}
-                    </p>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {a.status !== 'active' && (
+                        <Button onClick={() => reactivateAccount(a.id)} variant="ghost" size="xs">Reactivate</Button>
+                      )}
+                      <Button onClick={() => removeKiroAccount(a.id)} variant="danger" size="xs">Remove</Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {a.status !== 'active' && (
-                      <Button onClick={() => reactivateAccount(a.id)} variant="ghost" size="xs">Reactivate</Button>
-                    )}
-                    <Button onClick={() => removeKiroAccount(a.id)} variant="danger" size="xs">Remove</Button>
-                  </div>
+
+                  {/* Per-account credit consumption */}
+                  {stats && (
+                    <div className="mt-2 grid grid-cols-4 gap-3 text-[11px]">
+                      <div className="bg-surface-2 border border-edge rounded px-2 py-1.5">
+                        <p className="text-[10px] text-txt-muted uppercase tracking-wider">Today</p>
+                        <p className="text-white font-semibold tabular-nums">{formatTokens(stats.todayTokens)}</p>
+                        <p className="text-txt-faint text-[10px]">{stats.todayRequests} req</p>
+                      </div>
+                      <div className="bg-surface-2 border border-edge rounded px-2 py-1.5">
+                        <p className="text-[10px] text-txt-muted uppercase tracking-wider">7d</p>
+                        <p className="text-white font-semibold tabular-nums">{formatTokens(stats.weekTokens)}</p>
+                        <p className="text-txt-faint text-[10px]">{stats.weekRequests} req</p>
+                      </div>
+                      <div className="bg-surface-2 border border-edge rounded px-2 py-1.5">
+                        <p className="text-[10px] text-txt-muted uppercase tracking-wider">Total</p>
+                        <p className="text-white font-semibold tabular-nums">{formatTokens(stats.totalTokens)}</p>
+                        <p className="text-txt-faint text-[10px]">{stats.totalRequests} req</p>
+                      </div>
+                      <div className="bg-surface-2 border border-edge rounded px-2 py-1.5">
+                        <p className="text-[10px] text-txt-muted uppercase tracking-wider">In/Out</p>
+                        <p className="text-white font-semibold tabular-nums text-[11px]">
+                          {formatTokens(stats.totalPromptTokens)} / {formatTokens(stats.totalCompletionTokens)}
+                        </p>
+                        <p className="text-txt-faint text-[10px]">{stats.failedRequests} failed</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Last error / exhaust reason */}
+                  {stats?.lastError && a.status === 'exhausted' && (
+                    <div className="mt-2 px-2 py-1.5 bg-red-500/10 border border-red-500/30 rounded text-[11px] text-red-300/90">
+                      <span className="font-medium">Exhausted</span>
+                      {stats.exhaustedAt && (
+                        <span className="text-red-400/70"> · {new Date(stats.exhaustedAt).toLocaleString('id-ID')}</span>
+                      )}
+                      <span className="block mt-0.5 font-mono text-[10px] text-red-300/70 truncate">{stats.lastError}</span>
+                    </div>
+                  )}
+                  {stats?.lastError && a.status === 'active' && (
+                    <div className="mt-2 px-2 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded text-[11px] text-amber-300/90">
+                      <span className="font-medium">Last error</span>
+                      {stats.lastErrorAt && (
+                        <span className="text-amber-400/70"> · {new Date(stats.lastErrorAt).toLocaleString('id-ID')}</span>
+                      )}
+                      <span className="block mt-0.5 font-mono text-[10px] text-amber-300/70 truncate">{stats.lastError}</span>
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

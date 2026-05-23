@@ -144,7 +144,7 @@ export async function streamKiroChat(
     const errText = await response.text().catch(() => '');
     // Mark account exhausted on quota / rate limit errors
     if (response.status === 429 || response.status === 403) {
-      await markAccountExhausted(account.accountId);
+      await markAccountExhausted(account.accountId, `Kiro ${response.status}: ${errText.slice(0, 200)}`);
     }
     throw new Error(`Kiro API error (${response.status}): ${errText}`);
   }
@@ -264,7 +264,7 @@ export async function generateKiroChat(
   if (!response.ok) {
     const errText = await response.text().catch(() => '');
     if (response.status === 429 || response.status === 403) {
-      await markAccountExhausted(account.accountId);
+      await markAccountExhausted(account.accountId, `Kiro ${response.status}: ${errText.slice(0, 200)}`);
     }
     throw new Error(`Kiro API error (${response.status}): ${errText}`);
   }

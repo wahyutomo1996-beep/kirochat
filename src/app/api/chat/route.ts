@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { streamChat, estimateTokens } from '@/lib/providers';
 import { streamKiroChat, type ChatMessage } from '@/lib/kiro-chat';
+import { recordKiroUsage } from '@/lib/kiro-pool';
 import { findModel } from '@/lib/models';
 import { estimateCost } from '@/lib/pricing';
 import {
@@ -219,6 +220,7 @@ async function dispatchStream(
 ): Promise<{
   stream: ReadableStream;
   getUsage: () => { promptTokens: number; completionTokens: number; totalTokens: number };
+  kiroAccountId: string | null;
 }> {
   const { provider, model } = decision;
 
@@ -231,6 +233,7 @@ async function dispatchStream(
     return {
       stream: result.stream,
       getUsage: () => ({ promptTokens: 0, completionTokens: 0, totalTokens: 0 }),
+      kiroAccountId: result.accountId,
     };
   }
 
@@ -238,11 +241,12 @@ async function dispatchStream(
     throw new Error('Provider row missing for non-builtin route');
   }
 
-  return streamChat(
+  const result = await streamChat(
     { type: provider.row.type, baseUrl: provider.row.baseUrl, apiKey: provider.row.apiKey },
     model,
     messages,
   );
+  return { ...result, kiroAccountId: null };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -319,11 +323,11 @@ export async function POST(request: NextRequest) {
     const apiMessages = buildApiMessages(dbMessages, targetSupportsImages);
 
     // ---- Dispatch ----
-    const { stream: upstreamStream, getUsage } = await dispatchStream(
-      userId,
-      decision,
-      apiMessages,
-    );
+    const {
+      stream: upstreamStream,
+      getUsage,
+      kiroAccountId,
+    } = await dispatchStream(userId, decision, apiMessages);
 
     // ---- Pipe through SSE transformer ----
     let fullResponse = '';
@@ -403,6 +407,7 @@ export async function POST(request: NextRequest) {
             userId,
             providerId: trackingProviderId,
             providerName: trackingProviderName,
+            kiroAccountId,
             model: decision.model,
             promptTokens: usage.promptTokens,
             completionTokens: usage.completionTokens,
@@ -412,6 +417,15 @@ export async function POST(request: NextRequest) {
             success: true,
           },
         });
+
+        // Aggregate per-account counters for fast Settings rendering
+        if (kiroAccountId) {
+          await recordKiroUsage(
+            kiroAccountId,
+            usage.promptTokens,
+            usage.completionTokens,
+          );
+        }
 
         const msgCount = await prisma.message.count({ where: { conversationId: convId } });
         if (msgCount <= 2) {

@@ -148,12 +148,61 @@ export async function pickKiroAccount(userId: string): Promise<KiroTokenResult> 
 
 /**
  * Mark an account as exhausted (called after a 429/quota error).
+ * Stores the error message so the UI can show why it was marked.
  */
-export async function markAccountExhausted(accountId: string): Promise<void> {
+export async function markAccountExhausted(accountId: string, reason?: string): Promise<void> {
   await prisma.kiroAccount.update({
     where: { id: accountId },
-    data: { status: 'exhausted', exhaustedAt: new Date() },
+    data: {
+      status: 'exhausted',
+      exhaustedAt: new Date(),
+      lastError: reason?.slice(0, 500),
+      lastErrorAt: new Date(),
+      failedRequests: { increment: 1 },
+    },
   });
+}
+
+/**
+ * Record successful token usage on a specific account. Increments aggregate
+ * counters used by the Settings UI to surface per-account credit consumption.
+ */
+export async function recordKiroUsage(
+  accountId: string,
+  promptTokens: number,
+  completionTokens: number,
+): Promise<void> {
+  const total = promptTokens + completionTokens;
+  await prisma.kiroAccount
+    .update({
+      where: { id: accountId },
+      data: {
+        totalRequests: { increment: 1 },
+        totalPromptTokens: { increment: promptTokens },
+        totalCompletionTokens: { increment: completionTokens },
+        totalTokens: { increment: total },
+      },
+    })
+    .catch(() => {
+      /* account might have been deleted between request and finish - ignore */
+    });
+}
+
+/**
+ * Record a failed request on a specific account without exhausting it.
+ * Used for transient errors that don't justify pulling the account from the pool.
+ */
+export async function recordKiroFailure(accountId: string, reason?: string): Promise<void> {
+  await prisma.kiroAccount
+    .update({
+      where: { id: accountId },
+      data: {
+        failedRequests: { increment: 1 },
+        lastError: reason?.slice(0, 500),
+        lastErrorAt: new Date(),
+      },
+    })
+    .catch(() => {});
 }
 
 /**
