@@ -1,64 +1,48 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+/**
+ * Settings page — showcases RTK Query integration.
+ *
+ * What changed vs the manual-fetch version:
+ *   - Server data: `useListProvidersQuery`, `useListKiroAccountsQuery`,
+ *     `useGetKiroUsageQuery`, `useGetApiKeyQuery` — automatic caching,
+ *     deduping, refetch-on-focus, polling for live credit display.
+ *   - Mutations: `useAddKiroAccountMutation`, `useDeleteKiroAccountMutation`,
+ *     `useReactivateKiroAccountMutation`, etc — automatic tag invalidation
+ *     so the list/stats refresh without manual refetch wiring.
+ *   - User feedback: `dispatch(showToast(...))` instead of inline message
+ *     state — toasts auto-dismiss and live in a single global container.
+ *
+ * Local state is still useState — form input, modal open/close, key visibility.
+ * That's pure UI state with no server backing, so it doesn't belong in Redux.
+ */
+
+import { useState } from 'react';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
-import { Alert } from '@/components/Alert';
 import { Badge } from '@/components/Badge';
 import { LoadingState } from '@/components/LoadingState';
 import { TokenDetector } from '@/components/TokenDetector';
-
-interface Provider {
-  id: string;
-  name: string;
-  type: string;
-  baseUrl: string;
-  models: string;
-  modelsLastFetched: string | null;
-  isDefault: boolean;
-  isActive: boolean;
-}
-
-interface KiroAccount {
-  id: string;
-  email: string | null;
-  status: string;
-  usageCount: number;
-  lastUsed: string | null;
-  tokenExpiresAt: string | null;
-  exhaustedAt: string | null;
-  createdAt: string;
-  refreshTokenPreview: string;
-}
-
-interface KiroAccountStats {
-  id: string;
-  email: string | null;
-  status: string;
-  createdAt: string;
-  lastUsed: string | null;
-  totalRequests: number;
-  totalTokens: number;
-  totalPromptTokens: number;
-  totalCompletionTokens: number;
-  failedRequests: number;
-  todayRequests: number;
-  todayTokens: number;
-  weekRequests: number;
-  weekTokens: number;
-  lastError: string | null;
-  lastErrorAt: string | null;
-  exhaustedAt: string | null;
-}
-
-interface KiroSummary {
-  totalAccounts: number;
-  activeAccounts: number;
-  exhaustedAccounts: number;
-  totalTokensToday: number;
-  totalTokensWeek: number;
-  totalTokensAllTime: number;
-}
+import { useAppDispatch } from '@/lib/store/hooks';
+import { showToast } from '@/lib/store/slices/uiSlice';
+import {
+  useListKiroAccountsQuery,
+  useGetKiroUsageQuery,
+  useAddKiroAccountMutation,
+  useDeleteKiroAccountMutation,
+  useReactivateKiroAccountMutation,
+} from '@/lib/store/api/kiroAccountsApi';
+import {
+  useListProvidersQuery,
+  useCreateProviderMutation,
+  useDeleteProviderMutation,
+  useUpdateProviderMutation,
+  useRefreshProviderModelsMutation,
+} from '@/lib/store/api/providersApi';
+import {
+  useGetApiKeyQuery,
+  useRegenerateApiKeyMutation,
+} from '@/lib/store/api/apiKeyApi';
 
 const PRESETS = [
   { name: 'WIR Cloud', baseUrl: 'http://137.184.195.229:3000/v1' },
@@ -71,10 +55,7 @@ const PRESETS = [
   { name: 'Together AI', baseUrl: 'https://api.together.xyz/v1' },
 ];
 
-/**
- * Format a raw token count into a human-friendly short string.
- * 1234 -> "1.2K", 1234567 -> "1.2M".
- */
+/** 1234 -> "1.2K", 1234567 -> "1.2M" */
 function formatTokens(n: number): string {
   if (!n) return '0';
   if (n < 1000) return String(n);
@@ -83,194 +64,168 @@ function formatTokens(n: number): string {
 }
 
 export default function SettingsPage() {
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const [kiroAccounts, setKiroAccounts] = useState<KiroAccount[]>([]);
-  const [kiroStats, setKiroStats] = useState<KiroAccountStats[]>([]);
-  const [kiroSummary, setKiroSummary] = useState<KiroSummary | null>(null);
-  const [apiKey, setApiKey] = useState<string>('');
+  const dispatch = useAppDispatch();
+
+  // ───────────────────────── server data via RTK Query ──────────────────────
+  const { data: providersData, isLoading: providersLoading } = useListProvidersQuery();
+  const { data: kiroData, isLoading: kiroLoading } = useListKiroAccountsQuery();
+  // Poll usage every 30s for live credit display. Component-level config
+  // beats a global polling interval — only this page needs it.
+  const { data: usageData } = useGetKiroUsageQuery(undefined, { pollingInterval: 30_000 });
+  const { data: apiKeyData, isLoading: apiKeyLoading } = useGetApiKeyQuery();
+
+  const providers = providersData?.providers ?? [];
+  const kiroAccounts = kiroData?.accounts ?? [];
+  const kiroStats = usageData?.accounts ?? [];
+  const kiroSummary = usageData?.summary ?? null;
+  const apiKey = apiKeyData?.apiKey ?? '';
+
+  // ───────────────────────── mutations ──────────────────────────────────────
+  const [addKiro, { isLoading: addingKiro }] = useAddKiroAccountMutation();
+  const [deleteKiro] = useDeleteKiroAccountMutation();
+  const [reactivateKiro] = useReactivateKiroAccountMutation();
+  const [createProvider, { isLoading: creatingProvider }] = useCreateProviderMutation();
+  const [deleteProvider] = useDeleteProviderMutation();
+  const [updateProvider] = useUpdateProviderMutation();
+  const [refreshModels] = useRefreshProviderModelsMutation();
+  const [regenerateKey] = useRegenerateApiKeyMutation();
+
+  // ───────────────────────── local UI state ─────────────────────────────────
   const [keyVisible, setKeyVisible] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [showDetector, setShowDetector] = useState(false);
   const [showAddKiro, setShowAddKiro] = useState(false);
   const [kiroTokenInput, setKiroTokenInput] = useState('');
   const [form, setForm] = useState({ name: '', type: 'api_key', baseUrl: '', apiKey: '' });
-  const [loading, setLoading] = useState(false);
-  const [initialLoad, setInitialLoad] = useState(true);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  useEffect(() => {
-    Promise.all([fetchProviders(), fetchKiroAccounts(), fetchKiroStats(), fetchApiKey()])
-      .finally(() => setInitialLoad(false));
-  }, []);
-
-  // Auto-refresh Kiro stats every 30s so the credit display stays close to live
-  useEffect(() => {
-    const id = setInterval(() => { fetchKiroStats(); }, 30_000);
-    return () => clearInterval(id);
-  }, []);
-
-  const fetchProviders = async () => {
-    const res = await fetch('/api/providers');
-    if (res.ok) { const data = await res.json(); setProviders(data.providers); }
-    else if (res.status === 401) window.location.href = '/login';
-  };
-
-  const fetchKiroAccounts = async () => {
-    const res = await fetch('/api/kiro-accounts');
-    if (res.ok) { const data = await res.json(); setKiroAccounts(data.accounts || []); }
-  };
-
-  const fetchKiroStats = async () => {
-    const res = await fetch('/api/kiro-accounts/usage');
-    if (res.ok) {
-      const data = await res.json();
-      setKiroStats(data.accounts || []);
-      setKiroSummary(data.summary || null);
-    }
-  };
-
-  const fetchApiKey = async () => {
-    const res = await fetch('/api/api-key');
-    if (res.ok) { const data = await res.json(); setApiKey(data.apiKey || ''); }
-  };
-
-  const regenerateApiKey = async () => {
-    if (!confirm('Regenerate your API key? All clients using the old key will stop working.')) return;
-    const res = await fetch('/api/api-key', { method: 'POST' });
-    if (res.ok) {
-      const data = await res.json();
-      setApiKey(data.apiKey);
-      setKeyVisible(true);
-      setMessage({ type: 'success', text: 'API key regenerated' });
-    }
-  };
-
-  const copyApiKey = async () => {
-    if (!apiKey) return;
-    try {
-      await navigator.clipboard.writeText(apiKey);
-      setMessage({ type: 'success', text: 'API key copied to clipboard' });
-    } catch {
-      setMessage({ type: 'error', text: 'Failed to copy' });
-    }
-  };
-
-  const copyBaseUrl = async () => {
-    const baseUrl = `${window.location.origin}/v1`;
-    try {
-      await navigator.clipboard.writeText(baseUrl);
-      setMessage({ type: 'success', text: 'Base URL copied' });
-    } catch {
-      setMessage({ type: 'error', text: 'Failed to copy' });
-    }
-  };
-
-  const addKiroAccount = async () => {
-    if (!kiroTokenInput.trim()) {
-      setMessage({ type: 'error', text: 'Refresh token required' });
-      return;
-    }
-    setLoading(true);
-    setMessage(null);
-    try {
-      const res = await fetch('/api/kiro-accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: kiroTokenInput.trim() }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        const parts = [];
-        if (data.total > 0) parts.push(`Added ${data.total} account(s)`);
-        if (data.errors?.length > 0) parts.push(`${data.errors.length} failed`);
-        setMessage({ type: data.total > 0 ? 'success' : 'error', text: parts.join(', ') || 'Done' });
-        setKiroTokenInput('');
-        setShowAddKiro(false);
-        fetchKiroAccounts(); fetchKiroStats();
-      } else {
-        setMessage({ type: 'error', text: data.error || 'Failed to add account' });
-      }
-    } catch (e) {
-      setMessage({ type: 'error', text: (e as Error).message });
-    }
-    setLoading(false);
-  };
-
-  const removeKiroAccount = async (id: string) => {
-    if (!confirm('Remove this Kiro account?')) return;
-    await fetch(`/api/kiro-accounts/${id}`, { method: 'DELETE' });
-    fetchKiroAccounts(); fetchKiroStats();
-  };
-
-  const reactivateAccount = async (id: string) => {
-    setMessage(null);
-    const res = await fetch(`/api/kiro-accounts/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'active' }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok) {
-      setMessage({ type: 'success', text: 'Account revived - Kiro accepted the refresh token' });
-    } else {
-      setMessage({
-        type: 'error',
-        text: data.error
-          ? `${data.error}${data.detail ? ` (${String(data.detail).slice(0, 120)})` : ''}`
-          : 'Reactivation failed',
-      });
-    }
-    fetchKiroAccounts(); fetchKiroStats();
-  };
-
-  const addProvider = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true); setMessage(null);
-    const res = await fetch('/api/providers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-    const data = await res.json();
-    if (res.ok) {
-      setMessage({ type: 'success', text: data.message || 'Provider berhasil ditambahkan' });
-      setForm({ name: '', type: 'api_key', baseUrl: '', apiKey: '' });
-      setShowAdd(false);
-      fetchProviders();
-    } else {
-      setMessage({ type: 'error', text: data.error || 'Failed to add provider' });
-    }
-    setLoading(false);
-  };
-
-  const refreshModels = async (id: string) => {
-    setMessage(null);
-    const res = await fetch(`/api/providers/${id}/models`);
-    const data = await res.json();
-    if (res.ok) {
-      setMessage({ type: 'success', text: `Refreshed: ${data.count} models detected` });
-      fetchProviders();
-    } else {
-      setMessage({ type: 'error', text: data.error || 'Failed to refresh models' });
-    }
-  };
-
-  const deleteProvider = async (id: string) => {
-    if (!confirm('Hapus provider ini?')) return;
-    await fetch(`/api/providers/${id}`, { method: 'DELETE' });
-    fetchProviders();
-  };
-
-  const setDefault = async (id: string) => {
-    await fetch(`/api/providers/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isDefault: true }) });
-    fetchProviders();
-  };
-
-  const toggleActive = async (id: string, isActive: boolean) => {
-    await fetch(`/api/providers/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: !isActive }) });
-    fetchProviders();
-  };
-
+  const initialLoad = providersLoading || kiroLoading || apiKeyLoading;
   if (initialLoad) return <LoadingState fullScreen />;
 
-  const activeAccounts = kiroAccounts.filter(a => a.status === 'active').length;
-  const exhaustedAccounts = kiroAccounts.filter(a => a.status === 'exhausted').length;
+  // ───────────────────────── handlers ───────────────────────────────────────
+  const handleRegenerateKey = async () => {
+    if (!confirm('Regenerate your API key? All clients using the old key will stop working.')) return;
+    try {
+      await regenerateKey().unwrap();
+      setKeyVisible(true);
+      dispatch(showToast({ type: 'success', message: 'API key regenerated' }));
+    } catch {
+      dispatch(showToast({ type: 'error', message: 'Failed to regenerate key' }));
+    }
+  };
+
+  const handleCopy = async (text: string, label: string) => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      dispatch(showToast({ type: 'success', message: `${label} copied to clipboard` }));
+    } catch {
+      dispatch(showToast({ type: 'error', message: 'Failed to copy' }));
+    }
+  };
+
+  const handleAddKiro = async () => {
+    if (!kiroTokenInput.trim()) {
+      dispatch(showToast({ type: 'error', message: 'Refresh token required' }));
+      return;
+    }
+    try {
+      const result = await addKiro({ refreshToken: kiroTokenInput.trim() }).unwrap();
+      const parts: string[] = [];
+      if (result.total > 0) parts.push(`Added ${result.total} account(s)`);
+      if (result.errors.length > 0) parts.push(`${result.errors.length} failed`);
+      dispatch(
+        showToast({
+          type: result.total > 0 ? 'success' : 'error',
+          message: parts.join(', ') || 'Done',
+        }),
+      );
+      setKiroTokenInput('');
+      setShowAddKiro(false);
+    } catch (err) {
+      const message =
+        (err as { data?: { error?: string } })?.data?.error ?? 'Failed to add account';
+      dispatch(showToast({ type: 'error', message }));
+    }
+  };
+
+  const handleRemoveKiro = async (id: string) => {
+    if (!confirm('Remove this Kiro account?')) return;
+    try {
+      await deleteKiro(id).unwrap();
+      dispatch(showToast({ type: 'success', message: 'Account removed' }));
+    } catch {
+      dispatch(showToast({ type: 'error', message: 'Failed to remove account' }));
+    }
+  };
+
+  const handleReactivate = async (id: string) => {
+    try {
+      await reactivateKiro(id).unwrap();
+      dispatch(
+        showToast({ type: 'success', message: 'Account revived — Kiro accepted the refresh token' }),
+      );
+    } catch (err) {
+      const data = (err as { data?: { error?: string; detail?: string } })?.data;
+      const message = data?.error
+        ? `${data.error}${data.detail ? ` (${String(data.detail).slice(0, 120)})` : ''}`
+        : 'Reactivation failed';
+      dispatch(showToast({ type: 'error', message }));
+    }
+  };
+
+  const handleAddProvider = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const result = await createProvider(form).unwrap();
+      dispatch(
+        showToast({
+          type: 'success',
+          message: result.message || 'Provider berhasil ditambahkan',
+        }),
+      );
+      setForm({ name: '', type: 'api_key', baseUrl: '', apiKey: '' });
+      setShowAdd(false);
+    } catch (err) {
+      const message =
+        (err as { data?: { error?: string } })?.data?.error ?? 'Failed to add provider';
+      dispatch(showToast({ type: 'error', message }));
+    }
+  };
+
+  const handleRefreshModels = async (id: string) => {
+    try {
+      const result = await refreshModels(id).unwrap();
+      dispatch(
+        showToast({ type: 'success', message: `Refreshed: ${result.count} models detected` }),
+      );
+    } catch (err) {
+      const message =
+        (err as { data?: { error?: string } })?.data?.error ?? 'Failed to refresh models';
+      dispatch(showToast({ type: 'error', message }));
+    }
+  };
+
+  const handleDeleteProvider = async (id: string) => {
+    if (!confirm('Hapus provider ini?')) return;
+    try {
+      await deleteProvider(id).unwrap();
+      dispatch(showToast({ type: 'success', message: 'Provider deleted' }));
+    } catch {
+      dispatch(showToast({ type: 'error', message: 'Failed to delete' }));
+    }
+  };
+
+  const handleSetDefault = (id: string) => {
+    void updateProvider({ id, isDefault: true });
+  };
+
+  const handleToggleActive = (id: string, isActive: boolean) => {
+    void updateProvider({ id, isActive: !isActive });
+  };
+
+  // ───────────────────────── derived data ───────────────────────────────────
+  const activeAccounts = kiroAccounts.filter((a) => a.status === 'active').length;
+  const exhaustedAccounts = kiroAccounts.filter((a) => a.status === 'exhausted').length;
   const baseUrl = typeof window !== 'undefined' ? `${window.location.origin}/v1` : '/v1';
   const maskedKey = apiKey ? `${apiKey.slice(0, 8)}${'\u2022'.repeat(32)}${apiKey.slice(-6)}` : 'No key';
 
@@ -281,35 +236,43 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between mb-8 animate-fade-in">
           <div>
             <h1 className="text-2xl font-semibold text-white">Settings</h1>
-            <p className="text-txt-muted text-sm mt-1">Manage your AI providers, Kiro accounts, and API access</p>
+            <p className="text-txt-muted text-sm mt-1">
+              Manage your AI providers, Kiro accounts, and API access
+            </p>
           </div>
           <a href="/chat">
-            <Button variant="secondary" size="sm">&larr; Back to Chat</Button>
+            <Button variant="secondary" size="sm">
+              ← Back to Chat
+            </Button>
           </a>
         </div>
 
-        {message && (
-          <div className="mb-4 animate-fade-in">
-            <Alert type={message.type}>{message.text}</Alert>
-          </div>
-        )}
-
-        {/* API Key Section - OpenAI-compatible access */}
+        {/* API Key Section */}
         <div className="bg-surface-1 border border-edge rounded-xl overflow-hidden mb-6 animate-slide-up">
           <div className="px-5 py-4 border-b border-edge">
             <h2 className="text-base font-semibold text-white">Your API Key</h2>
-            <p className="text-xs text-txt-muted mt-0.5">Use Prometheus as a provider in any OpenAI-compatible client</p>
+            <p className="text-xs text-txt-muted mt-0.5">
+              Use Prometheus as a provider in any OpenAI-compatible client
+            </p>
           </div>
           <div className="p-5 space-y-4">
             <div>
-              <label className="block text-[11px] font-semibold text-txt-muted mb-1.5 uppercase tracking-wider">Base URL</label>
+              <label className="block text-[11px] font-semibold text-txt-muted mb-1.5 uppercase tracking-wider">
+                Base URL
+              </label>
               <div className="flex items-center gap-2">
-                <code className="flex-1 px-3 py-2 bg-surface-2 border border-edge rounded-lg text-sm text-white font-mono break-all">{baseUrl}</code>
-                <Button onClick={copyBaseUrl} variant="ghost" size="sm">Copy</Button>
+                <code className="flex-1 px-3 py-2 bg-surface-2 border border-edge rounded-lg text-sm text-white font-mono break-all">
+                  {baseUrl}
+                </code>
+                <Button onClick={() => handleCopy(baseUrl, 'Base URL')} variant="ghost" size="sm">
+                  Copy
+                </Button>
               </div>
             </div>
             <div>
-              <label className="block text-[11px] font-semibold text-txt-muted mb-1.5 uppercase tracking-wider">API Key</label>
+              <label className="block text-[11px] font-semibold text-txt-muted mb-1.5 uppercase tracking-wider">
+                API Key
+              </label>
               <div className="flex items-center gap-2">
                 <code className="flex-1 px-3 py-2 bg-surface-2 border border-edge rounded-lg text-sm text-white font-mono break-all">
                   {keyVisible ? apiKey : maskedKey}
@@ -317,35 +280,46 @@ export default function SettingsPage() {
                 <Button onClick={() => setKeyVisible(!keyVisible)} variant="ghost" size="sm">
                   {keyVisible ? 'Hide' : 'Show'}
                 </Button>
-                <Button onClick={copyApiKey} variant="ghost" size="sm">Copy</Button>
-                <Button onClick={regenerateApiKey} variant="outline" size="sm">Regenerate</Button>
+                <Button onClick={() => handleCopy(apiKey, 'API key')} variant="ghost" size="sm">
+                  Copy
+                </Button>
+                <Button onClick={handleRegenerateKey} variant="outline" size="sm">
+                  Regenerate
+                </Button>
               </div>
               <p className="text-[11px] text-txt-faint mt-2">
-                Use this key with any OpenAI SDK. Set <code className="text-txt-secondary">OPENAI_API_KEY</code> and <code className="text-txt-secondary">OPENAI_BASE_URL</code> to the values above.
+                Use this key with any OpenAI SDK. Set <code className="text-txt-secondary">OPENAI_API_KEY</code>{' '}
+                and <code className="text-txt-secondary">OPENAI_BASE_URL</code> to the values above.
               </p>
             </div>
             <details className="group/sample">
               <summary className="cursor-pointer text-xs text-txt-muted hover:text-white inline-flex items-center gap-1">
-                <svg className="w-3 h-3 transition-transform group-open/sample:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                <svg className="w-3 h-3 transition-transform group-open/sample:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
                 Sample code (Python / curl)
               </summary>
               <div className="mt-3 space-y-2">
-                <pre className="text-[11px] bg-surface-2 border border-edge rounded p-3 overflow-x-auto text-txt-secondary font-mono"><code>{`# Python (openai SDK)
+                <pre className="text-[11px] bg-surface-2 border border-edge rounded p-3 overflow-x-auto text-txt-secondary font-mono">
+                  <code>{`# Python (openai SDK)
 from openai import OpenAI
 client = OpenAI(api_key="${apiKey || 'pmt-...'}", base_url="${baseUrl}")
 r = client.chat.completions.create(
     model="kiro/claude-opus-4.7",
     messages=[{"role": "user", "content": "Hello"}],
 )
-print(r.choices[0].message.content)`}</code></pre>
-                <pre className="text-[11px] bg-surface-2 border border-edge rounded p-3 overflow-x-auto text-txt-secondary font-mono"><code>{`# curl
+print(r.choices[0].message.content)`}</code>
+                </pre>
+                <pre className="text-[11px] bg-surface-2 border border-edge rounded p-3 overflow-x-auto text-txt-secondary font-mono">
+                  <code>{`# curl
 curl ${baseUrl}/chat/completions \\
   -H "Authorization: Bearer ${apiKey || 'pmt-...'}" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "kiro/claude-opus-4.7",
     "messages": [{"role": "user", "content": "Hello"}]
-  }'`}</code></pre>
+  }'`}</code>
+                </pre>
               </div>
             </details>
           </div>
@@ -357,12 +331,16 @@ curl ${baseUrl}/chat/completions \\
             <div>
               <h2 className="text-base font-semibold text-white inline-flex items-center gap-2">
                 Kiro Account Pool
-                <span className="text-[9px] px-1.5 py-0.5 bg-purple-500/15 border border-purple-500/30 text-purple-300 rounded font-bold uppercase tracking-wider">Powers Prometheus</span>
+                <span className="text-[9px] px-1.5 py-0.5 bg-purple-500/15 border border-purple-500/30 text-purple-300 rounded font-bold uppercase tracking-wider">
+                  Powers Prometheus
+                </span>
               </h2>
               <p className="text-xs text-txt-muted mt-0.5">
-                {activeAccounts} active &middot; {exhaustedAccounts} exhausted &middot; {kiroAccounts.length} total
+                {activeAccounts} active · {exhaustedAccounts} exhausted · {kiroAccounts.length} total
                 {' · '}
-                <span className="text-txt-faint">paste Kiro refresh tokens here — the built-in Prometheus provider auto-rotates between them</span>
+                <span className="text-txt-faint">
+                  paste Kiro refresh tokens here — the built-in Prometheus provider auto-rotates between them
+                </span>
               </p>
             </div>
             <Button onClick={() => setShowAddKiro(!showAddKiro)} variant="primary" size="sm">
@@ -370,27 +348,34 @@ curl ${baseUrl}/chat/completions \\
             </Button>
           </div>
 
-          {/* Pool-wide credit summary */}
           {kiroSummary && kiroSummary.totalAccounts > 0 && (
             <div className="px-5 py-3 border-b border-edge bg-surface-2 grid grid-cols-3 gap-4">
               <div>
                 <p className="text-[10px] text-txt-muted uppercase tracking-wider mb-0.5">Tokens today</p>
-                <p className="text-base font-semibold text-white tabular-nums">{formatTokens(kiroSummary.totalTokensToday)}</p>
+                <p className="text-base font-semibold text-white tabular-nums">
+                  {formatTokens(kiroSummary.totalTokensToday)}
+                </p>
               </div>
               <div>
                 <p className="text-[10px] text-txt-muted uppercase tracking-wider mb-0.5">Last 7 days</p>
-                <p className="text-base font-semibold text-white tabular-nums">{formatTokens(kiroSummary.totalTokensWeek)}</p>
+                <p className="text-base font-semibold text-white tabular-nums">
+                  {formatTokens(kiroSummary.totalTokensWeek)}
+                </p>
               </div>
               <div>
                 <p className="text-[10px] text-txt-muted uppercase tracking-wider mb-0.5">All-time</p>
-                <p className="text-base font-semibold text-white tabular-nums">{formatTokens(kiroSummary.totalTokensAllTime)}</p>
+                <p className="text-base font-semibold text-white tabular-nums">
+                  {formatTokens(kiroSummary.totalTokensAllTime)}
+                </p>
               </div>
             </div>
           )}
 
           {showAddKiro && (
             <div className="px-5 py-4 border-b border-edge bg-surface-2">
-              <label className="block text-[11px] font-semibold text-txt-muted mb-1.5 uppercase tracking-wider">Refresh Token (one per line)</label>
+              <label className="block text-[11px] font-semibold text-txt-muted mb-1.5 uppercase tracking-wider">
+                Refresh Token (one per line)
+              </label>
               <textarea
                 value={kiroTokenInput}
                 onChange={(e) => setKiroTokenInput(e.target.value)}
@@ -399,8 +384,19 @@ curl ${baseUrl}/chat/completions \\
                 className="w-full px-3 py-2 bg-surface-1 border border-edge rounded-lg text-sm text-white font-mono focus:outline-none focus:border-edge-hover transition-colors"
               />
               <div className="flex gap-2 mt-3">
-                <Button onClick={addKiroAccount} loading={loading} variant="primary" size="sm">Add to Pool</Button>
-                <Button onClick={() => { setShowAddKiro(false); setKiroTokenInput(''); }} variant="secondary" size="sm">Cancel</Button>
+                <Button onClick={handleAddKiro} loading={addingKiro} variant="primary" size="sm">
+                  Add to Pool
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowAddKiro(false);
+                    setKiroTokenInput('');
+                  }}
+                  variant="secondary"
+                  size="sm"
+                >
+                  Cancel
+                </Button>
               </div>
             </div>
           )}
@@ -408,81 +404,93 @@ curl ${baseUrl}/chat/completions \\
           {kiroAccounts.length === 0 ? (
             <div className="px-5 py-12 text-center">
               <p className="text-white text-sm font-medium">No Kiro accounts</p>
-              <p className="text-txt-muted text-xs mt-1">Add at least one Kiro refresh token to use kiro/* models via the API</p>
+              <p className="text-txt-muted text-xs mt-1">
+                Add at least one Kiro refresh token to use kiro/* models via the API
+              </p>
             </div>
           ) : (
             <div className="divide-y divide-edge">
               {kiroAccounts.map((a) => {
-                const stats = kiroStats.find(s => s.id === a.id);
+                const stats = kiroStats.find((s) => s.id === a.id);
                 return (
-                <div key={a.id} className="px-5 py-3 hover:bg-surface-2 transition-colors">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge variant={a.status === 'active' ? 'success' : 'danger'}>{a.status}</Badge>
-                        <span className="text-sm text-white truncate">{a.email || '(no email)'}</span>
-                      </div>
-                      <p className="text-[11px] text-txt-muted">
-                        <code className="font-mono">{a.refreshTokenPreview}</code>
-                        {a.lastUsed && ` · last used ${new Date(a.lastUsed).toLocaleString('id-ID')}`}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {a.status !== 'active' && (
-                        <Button onClick={() => reactivateAccount(a.id)} variant="ghost" size="xs">Reactivate</Button>
-                      )}
-                      <Button onClick={() => removeKiroAccount(a.id)} variant="danger" size="xs">Remove</Button>
-                    </div>
-                  </div>
-
-                  {/* Per-account credit consumption */}
-                  {stats && (
-                    <div className="mt-2 grid grid-cols-4 gap-3 text-[11px]">
-                      <div className="bg-surface-2 border border-edge rounded px-2 py-1.5">
-                        <p className="text-[10px] text-txt-muted uppercase tracking-wider">Today</p>
-                        <p className="text-white font-semibold tabular-nums">{formatTokens(stats.todayTokens)}</p>
-                        <p className="text-txt-faint text-[10px]">{stats.todayRequests} req</p>
-                      </div>
-                      <div className="bg-surface-2 border border-edge rounded px-2 py-1.5">
-                        <p className="text-[10px] text-txt-muted uppercase tracking-wider">7d</p>
-                        <p className="text-white font-semibold tabular-nums">{formatTokens(stats.weekTokens)}</p>
-                        <p className="text-txt-faint text-[10px]">{stats.weekRequests} req</p>
-                      </div>
-                      <div className="bg-surface-2 border border-edge rounded px-2 py-1.5">
-                        <p className="text-[10px] text-txt-muted uppercase tracking-wider">Total</p>
-                        <p className="text-white font-semibold tabular-nums">{formatTokens(stats.totalTokens)}</p>
-                        <p className="text-txt-faint text-[10px]">{stats.totalRequests} req</p>
-                      </div>
-                      <div className="bg-surface-2 border border-edge rounded px-2 py-1.5">
-                        <p className="text-[10px] text-txt-muted uppercase tracking-wider">In/Out</p>
-                        <p className="text-white font-semibold tabular-nums text-[11px]">
-                          {formatTokens(stats.totalPromptTokens)} / {formatTokens(stats.totalCompletionTokens)}
+                  <div key={a.id} className="px-5 py-3 hover:bg-surface-2 transition-colors">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant={a.status === 'active' ? 'success' : 'danger'}>{a.status}</Badge>
+                          <span className="text-sm text-white truncate">{a.email || '(no email)'}</span>
+                        </div>
+                        <p className="text-[11px] text-txt-muted">
+                          <code className="font-mono">{a.refreshTokenPreview}</code>
+                          {a.lastUsed && ` · last used ${new Date(a.lastUsed).toLocaleString('id-ID')}`}
                         </p>
-                        <p className="text-txt-faint text-[10px]">{stats.failedRequests} failed</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {a.status !== 'active' && (
+                          <Button onClick={() => handleReactivate(a.id)} variant="ghost" size="xs">
+                            Reactivate
+                          </Button>
+                        )}
+                        <Button onClick={() => handleRemoveKiro(a.id)} variant="danger" size="xs">
+                          Remove
+                        </Button>
                       </div>
                     </div>
-                  )}
 
-                  {/* Last error / exhaust reason */}
-                  {stats?.lastError && a.status === 'exhausted' && (
-                    <div className="mt-2 px-2 py-1.5 bg-red-500/10 border border-red-500/30 rounded text-[11px] text-red-300/90">
-                      <span className="font-medium">Exhausted</span>
-                      {stats.exhaustedAt && (
-                        <span className="text-red-400/70"> · {new Date(stats.exhaustedAt).toLocaleString('id-ID')}</span>
-                      )}
-                      <span className="block mt-0.5 font-mono text-[10px] text-red-300/70 truncate">{stats.lastError}</span>
-                    </div>
-                  )}
-                  {stats?.lastError && a.status === 'active' && (
-                    <div className="mt-2 px-2 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded text-[11px] text-amber-300/90">
-                      <span className="font-medium">Last error</span>
-                      {stats.lastErrorAt && (
-                        <span className="text-amber-400/70"> · {new Date(stats.lastErrorAt).toLocaleString('id-ID')}</span>
-                      )}
-                      <span className="block mt-0.5 font-mono text-[10px] text-amber-300/70 truncate">{stats.lastError}</span>
-                    </div>
-                  )}
-                </div>
+                    {stats && (
+                      <div className="mt-2 grid grid-cols-4 gap-3 text-[11px]">
+                        <div className="bg-surface-2 border border-edge rounded px-2 py-1.5">
+                          <p className="text-[10px] text-txt-muted uppercase tracking-wider">Today</p>
+                          <p className="text-white font-semibold tabular-nums">{formatTokens(stats.todayTokens)}</p>
+                          <p className="text-txt-faint text-[10px]">{stats.todayRequests} req</p>
+                        </div>
+                        <div className="bg-surface-2 border border-edge rounded px-2 py-1.5">
+                          <p className="text-[10px] text-txt-muted uppercase tracking-wider">7d</p>
+                          <p className="text-white font-semibold tabular-nums">{formatTokens(stats.weekTokens)}</p>
+                          <p className="text-txt-faint text-[10px]">{stats.weekRequests} req</p>
+                        </div>
+                        <div className="bg-surface-2 border border-edge rounded px-2 py-1.5">
+                          <p className="text-[10px] text-txt-muted uppercase tracking-wider">Total</p>
+                          <p className="text-white font-semibold tabular-nums">{formatTokens(stats.totalTokens)}</p>
+                          <p className="text-txt-faint text-[10px]">{stats.totalRequests} req</p>
+                        </div>
+                        <div className="bg-surface-2 border border-edge rounded px-2 py-1.5">
+                          <p className="text-[10px] text-txt-muted uppercase tracking-wider">In/Out</p>
+                          <p className="text-white font-semibold tabular-nums text-[11px]">
+                            {formatTokens(stats.totalPromptTokens)} / {formatTokens(stats.totalCompletionTokens)}
+                          </p>
+                          <p className="text-txt-faint text-[10px]">{stats.failedRequests} failed</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {stats?.lastError && a.status === 'exhausted' && (
+                      <div className="mt-2 px-2 py-1.5 bg-red-500/10 border border-red-500/30 rounded text-[11px] text-red-300/90">
+                        <span className="font-medium">Exhausted</span>
+                        {stats.exhaustedAt && (
+                          <span className="text-red-400/70">
+                            {' '}· {new Date(stats.exhaustedAt).toLocaleString('id-ID')}
+                          </span>
+                        )}
+                        <span className="block mt-0.5 font-mono text-[10px] text-red-300/70 truncate">
+                          {stats.lastError}
+                        </span>
+                      </div>
+                    )}
+                    {stats?.lastError && a.status === 'active' && (
+                      <div className="mt-2 px-2 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded text-[11px] text-amber-300/90">
+                        <span className="font-medium">Last error</span>
+                        {stats.lastErrorAt && (
+                          <span className="text-amber-400/70">
+                            {' '}· {new Date(stats.lastErrorAt).toLocaleString('id-ID')}
+                          </span>
+                        )}
+                        <span className="block mt-0.5 font-mono text-[10px] text-amber-300/70 truncate">
+                          {stats.lastError}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -493,19 +501,29 @@ curl ${baseUrl}/chat/completions \\
         <div className="bg-surface-1 border border-edge rounded-xl overflow-hidden mb-6 animate-slide-up">
           <div className="px-5 py-4 border-b border-edge flex items-center justify-between">
             <div>
-              <h2 className="text-base font-semibold text-white">External Providers <span className="text-xs text-txt-muted font-normal">(optional)</span></h2>
-              <p className="text-xs text-txt-muted mt-0.5">Add OpenAI-compatible providers (WIR Cloud, OpenRouter, OpenAI, etc.) for use alongside the built-in Prometheus pool</p>
+              <h2 className="text-base font-semibold text-white">
+                External Providers <span className="text-xs text-txt-muted font-normal">(optional)</span>
+              </h2>
+              <p className="text-xs text-txt-muted mt-0.5">
+                Add OpenAI-compatible providers (WIR Cloud, OpenRouter, OpenAI, etc.) for use alongside the built-in Prometheus pool
+              </p>
             </div>
             <div className="flex gap-2">
               <Button
-                onClick={() => { setShowDetector(!showDetector); setShowAdd(false); }}
+                onClick={() => {
+                  setShowDetector(!showDetector);
+                  setShowAdd(false);
+                }}
                 variant={showDetector ? 'secondary' : 'outline'}
                 size="sm"
               >
                 {showDetector ? 'Cancel' : 'Auto-detect Kiro'}
               </Button>
               <Button
-                onClick={() => { setShowAdd(!showAdd); setShowDetector(false); }}
+                onClick={() => {
+                  setShowAdd(!showAdd);
+                  setShowDetector(false);
+                }}
                 variant="primary"
                 size="sm"
               >
@@ -516,69 +534,82 @@ curl ${baseUrl}/chat/completions \\
 
           {providers.length === 0 ? (
             <div className="px-5 py-12 text-center">
-              <div className="w-12 h-12 rounded-xl bg-surface-2 border border-edge flex items-center justify-center mx-auto mb-3">
-                <svg className="w-6 h-6 text-txt-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-              </div>
               <p className="text-white text-sm font-medium">No providers configured</p>
-              <p className="text-txt-muted text-xs mt-1">Add an API key or Kiro refresh token to start chatting</p>
+              <p className="text-txt-muted text-xs mt-1">
+                Add an API key or Kiro refresh token to start chatting
+              </p>
             </div>
           ) : (
             <div className="divide-y divide-edge">
-              {providers.map((p) => {
-                const modelList = JSON.parse(p.models || '[]');
-                return (
-                <div key={p.id} className="px-5 py-4 hover:bg-surface-2 transition-colors">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-medium text-white truncate">{p.name}</span>
-                        {p.isDefault && <Badge variant="info">DEFAULT</Badge>}
-                        {!p.isActive && <Badge variant="danger">DISABLED</Badge>}
-                        {modelList.length > 0 && (
-                          <Badge variant="success">{modelList.length} models</Badge>
-                        )}
-                        {modelList.length === 0 && p.isActive && (
-                          <Badge variant="warning">no models</Badge>
-                        )}
+              {providers
+                .filter((p) => !p.builtin)
+                .map((p) => {
+                  const modelList = JSON.parse(p.models || '[]') as string[];
+                  return (
+                    <div key={p.id} className="px-5 py-4 hover:bg-surface-2 transition-colors">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-medium text-white truncate">{p.name}</span>
+                            {p.isDefault && <Badge variant="info">DEFAULT</Badge>}
+                            {!p.isActive && <Badge variant="danger">DISABLED</Badge>}
+                            {modelList.length > 0 && <Badge variant="success">{modelList.length} models</Badge>}
+                            {modelList.length === 0 && p.isActive && <Badge variant="warning">no models</Badge>}
+                          </div>
+                          <p className="text-xs text-txt-muted truncate">
+                            {p.type === 'kiro_refresh_token' ? 'Kiro Refresh Token' : 'API Key'} ·{' '}
+                            <span className="font-mono">{p.baseUrl || 'https://api.kiro.dev/v1'}</span>
+                          </p>
+                          {p.modelsLastFetched && (
+                            <p className="text-[11px] text-txt-faint mt-1">
+                              Models last fetched: {new Date(p.modelsLastFetched).toLocaleString('id-ID')}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button onClick={() => handleRefreshModels(p.id)} variant="ghost" size="xs" title="Re-fetch models">
+                            ↻ Refresh
+                          </Button>
+                          {!p.isDefault && (
+                            <Button onClick={() => handleSetDefault(p.id)} variant="ghost" size="xs">
+                              Set Default
+                            </Button>
+                          )}
+                          <Button
+                            onClick={() => handleToggleActive(p.id, p.isActive)}
+                            variant={p.isActive ? 'outline' : 'secondary'}
+                            size="xs"
+                          >
+                            {p.isActive ? 'Disable' : 'Enable'}
+                          </Button>
+                          <Button onClick={() => handleDeleteProvider(p.id)} variant="danger" size="xs">
+                            Delete
+                          </Button>
+                        </div>
                       </div>
-                      <p className="text-xs text-txt-muted truncate">
-                        {p.type === 'kiro_refresh_token' ? 'Kiro Refresh Token' : 'API Key'} &middot; <span className="font-mono">{p.baseUrl || 'https://api.kiro.dev/v1'}</span>
-                      </p>
-                      {p.modelsLastFetched && (
-                        <p className="text-[11px] text-txt-faint mt-1">
-                          Models last fetched: {new Date(p.modelsLastFetched).toLocaleString('id-ID')}
-                        </p>
+                      {modelList.length > 0 && (
+                        <details className="mt-3 group/models">
+                          <summary className="cursor-pointer text-[11px] text-txt-muted hover:text-white inline-flex items-center gap-1">
+                            <svg className="w-3 h-3 transition-transform group-open/models:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                            Available models ({modelList.length})
+                          </summary>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {modelList.map((m, i) => (
+                              <code
+                                key={i}
+                                className="px-1.5 py-0.5 bg-surface-2 border border-edge rounded text-[10px] text-txt-secondary font-mono"
+                              >
+                                {m}
+                              </code>
+                            ))}
+                          </div>
+                        </details>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button onClick={() => refreshModels(p.id)} variant="ghost" size="xs" title="Re-fetch models">&#x21BB; Refresh</Button>
-                      {!p.isDefault && (
-                        <Button onClick={() => setDefault(p.id)} variant="ghost" size="xs">Set Default</Button>
-                      )}
-                      <Button onClick={() => toggleActive(p.id, p.isActive)} variant={p.isActive ? 'outline' : 'secondary'} size="xs">
-                        {p.isActive ? 'Disable' : 'Enable'}
-                      </Button>
-                      <Button onClick={() => deleteProvider(p.id)} variant="danger" size="xs">Delete</Button>
-                    </div>
-                  </div>
-                  {modelList.length > 0 && (
-                    <details className="mt-3 group/models">
-                      <summary className="cursor-pointer text-[11px] text-txt-muted hover:text-white inline-flex items-center gap-1">
-                        <svg className="w-3 h-3 transition-transform group-open/models:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                        Available models ({modelList.length})
-                      </summary>
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {modelList.map((m: string, i: number) => (
-                          <code key={i} className="px-1.5 py-0.5 bg-surface-2 border border-edge rounded text-[10px] text-txt-secondary font-mono">{m}</code>
-                        ))}
-                      </div>
-                    </details>
-                  )}
-                </div>
-              );
-              })}
+                  );
+                })}
             </div>
           )}
         </div>
@@ -588,27 +619,25 @@ curl ${baseUrl}/chat/completions \\
           <div className="mb-6 animate-slide-up">
             <TokenDetector
               onTokenSelected={async (token, name) => {
-                setLoading(true);
-                setMessage(null);
-                const res = await fetch('/api/providers', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
+                try {
+                  const result = await createProvider({
                     name: name || 'Kiro Auto-detected',
                     type: 'kiro_refresh_token',
                     baseUrl: '',
                     apiKey: token,
-                  }),
-                });
-                const data = await res.json();
-                if (res.ok) {
-                  setMessage({ type: 'success', text: data.message || 'Kiro provider berhasil ditambahkan' });
+                  }).unwrap();
+                  dispatch(
+                    showToast({
+                      type: 'success',
+                      message: result.message || 'Kiro provider berhasil ditambahkan',
+                    }),
+                  );
                   setShowDetector(false);
-                  fetchProviders();
-                } else {
-                  setMessage({ type: 'error', text: data.error || 'Failed to save token' });
+                } catch (err) {
+                  const message =
+                    (err as { data?: { error?: string } })?.data?.error ?? 'Failed to save token';
+                  dispatch(showToast({ type: 'error', message }));
                 }
-                setLoading(false);
               }}
             />
           </div>
@@ -620,11 +649,15 @@ curl ${baseUrl}/chat/completions \\
             <h3 className="text-base font-semibold text-white mb-4">New Provider</h3>
 
             <div className="mb-5">
-              <label className="block text-[11px] font-semibold text-txt-muted mb-2 uppercase tracking-wider">Quick presets</label>
+              <label className="block text-[11px] font-semibold text-txt-muted mb-2 uppercase tracking-wider">
+                Quick presets
+              </label>
               <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setForm({ ...form, name: 'Kiro', type: 'kiro_refresh_token', baseUrl: '' })}
+                  onClick={() =>
+                    setForm({ ...form, name: 'Kiro', type: 'kiro_refresh_token', baseUrl: '' })
+                  }
                   className="px-3 py-1.5 text-xs font-medium border border-purple-500/30 bg-purple-500/10 text-purple-300 rounded-md hover:bg-purple-500/20 hover:border-purple-500/50 transition-all"
                 >
                   Kiro Refresh Token
@@ -645,7 +678,7 @@ curl ${baseUrl}/chat/completions \\
               </p>
             </div>
 
-            <form onSubmit={addProvider} className="space-y-4">
+            <form onSubmit={handleAddProvider} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <Input
                   label="Display Name"
@@ -656,7 +689,9 @@ curl ${baseUrl}/chat/completions \\
                   required
                 />
                 <div>
-                  <label className="block text-[11px] font-semibold text-txt-muted mb-1.5 uppercase tracking-wider">Type</label>
+                  <label className="block text-[11px] font-semibold text-txt-muted mb-1.5 uppercase tracking-wider">
+                    Type
+                  </label>
                   <select
                     value={form.type}
                     onChange={(e) => setForm({ ...form, type: e.target.value })}
@@ -689,8 +724,12 @@ curl ${baseUrl}/chat/completions \\
               />
 
               <div className="flex gap-2 pt-2">
-                <Button type="submit" loading={loading} variant="primary">Save Provider</Button>
-                <Button type="button" onClick={() => setShowAdd(false)} variant="secondary">Cancel</Button>
+                <Button type="submit" loading={creatingProvider} variant="primary">
+                  Save Provider
+                </Button>
+                <Button type="button" onClick={() => setShowAdd(false)} variant="secondary">
+                  Cancel
+                </Button>
               </div>
             </form>
           </div>
