@@ -23,6 +23,7 @@ import { Input } from '@/components/Input';
 import { Badge } from '@/components/Badge';
 import { LoadingState } from '@/components/LoadingState';
 import { TokenDetector } from '@/components/TokenDetector';
+import { ComboPanel } from '@/components/ComboPanel';
 import { useAppDispatch } from '@/lib/store/hooks';
 import { showToast } from '@/lib/store/slices/uiSlice';
 import {
@@ -518,6 +519,9 @@ curl ${baseUrl}/chat/completions \\
             </div>
           )}
         </div>
+
+        {/* Combos - ordered chains of (provider, model) with auto-fallback */}
+        <ComboPanel providers={providers} />
 
         {/* Provider List */}
         <div className="bg-surface-1 border border-edge rounded-xl overflow-hidden mb-6 animate-slide-up">

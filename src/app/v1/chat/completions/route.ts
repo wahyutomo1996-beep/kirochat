@@ -8,6 +8,7 @@ import { estimateTokens } from '@/lib/providers';
 import { estimateCost } from '@/lib/pricing';
 import { rateLimit } from '@/lib/ratelimit';
 import { readJsonBody, corsHeaders, PayloadTooLargeError } from '@/lib/http';
+import { compressMessages } from '@/lib/rtk-compression';
 
 interface ChatCompletionRequest {
   model: string;
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
     }
 
     const body = await readJsonBody<ChatCompletionRequest>(request, MAX_BODY_BYTES);
-    const { model, messages, stream } = body;
+    const { model, messages: rawMessages, stream } = body;
 
     if (!model) {
       return NextResponse.json(
@@ -83,12 +84,20 @@ export async function POST(request: Request) {
         { status: 400, headers: cors },
       );
     }
-    if (!Array.isArray(messages) || messages.length === 0) {
+    if (!Array.isArray(rawMessages) || rawMessages.length === 0) {
       return NextResponse.json(
         { error: { message: 'messages array is required', type: 'invalid_request_error' } },
         { status: 400, headers: cors },
       );
     }
+
+    // Apply RTK compression unless user opts out via x-rtk-disable header.
+    // Saves 20-40% input tokens on requests carrying tool_result blocks
+    // (git diff, grep, ls, file dumps from coding agents).
+    const rtkDisabled = request.headers.get('x-rtk-disable') === '1';
+    const { messages, stats: rtkStats } = rtkDisabled
+      ? { messages: rawMessages, stats: null }
+      : compressMessages(rawMessages);
 
     const found = findModel(model);
     if (!found) {
@@ -177,6 +186,12 @@ export async function POST(request: Request) {
           'X-Accel-Buffering': 'no',
           'X-RateLimit-Limit': String(GATEWAY_RPM),
           'X-RateLimit-Remaining': String(limit.remaining),
+          ...(rtkStats && rtkStats.blocksCompressed > 0
+            ? {
+                'X-RTK-Saved': String(rtkStats.bytesBefore - rtkStats.bytesAfter),
+                'X-RTK-Blocks': String(rtkStats.blocksCompressed),
+              }
+            : {}),
         },
       });
     }
@@ -240,6 +255,12 @@ export async function POST(request: Request) {
           ...cors,
           'X-RateLimit-Limit': String(GATEWAY_RPM),
           'X-RateLimit-Remaining': String(limit.remaining),
+          ...(rtkStats && rtkStats.blocksCompressed > 0
+            ? {
+                'X-RTK-Saved': String(rtkStats.bytesBefore - rtkStats.bytesAfter),
+                'X-RTK-Blocks': String(rtkStats.blocksCompressed),
+              }
+            : {}),
         },
       },
     );

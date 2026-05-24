@@ -32,6 +32,7 @@ import './api/dashboardApi';
 import './api/apiKeyApi';
 import './api/healthApi';
 import './api/adminUsersApi';
+import './api/combosApi';
 
 export const makeStore = () => {
   const store = configureStore({

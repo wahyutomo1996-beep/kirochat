@@ -25,6 +25,7 @@ model User {
   conversations       Conversation[]
   usages              Usage[]
   kiroAccounts        KiroAccount[]
+  combos              Combo[]
 }
 
 model Provider {
@@ -126,4 +127,34 @@ model Usage {
   @@index([providerId, createdAt])
   @@index([kiroAccountId, createdAt])
   @@index([model, createdAt])
+}
+
+/// User-defined model combo. A combo is an ordered chain of (provider, model)
+/// steps tried sequentially - if the first step fails (rate limit, auth,
+/// network), the dispatcher falls back to the next. Used for things like
+/// "coding-premium" (Claude Opus -> GPT-4o -> Kiro Sonnet free) or
+/// "trading-realtime" (Groq fast model -> Gemini Flash -> Kiro Haiku).
+model Combo {
+  id          String   @id @default(cuid())
+  userId      String
+  /// Slug used in chat dropdown, e.g. "coding-premium". Lowercase, hyphenated.
+  slug        String
+  name        String
+  description String   @default("")
+  /// One of: coding, trading, research, general, custom
+  category    String   @default("custom")
+  /// Emoji icon shown in UI
+  icon        String   @default("\u26A1")
+  /// JSON-encoded array of ComboStep:
+  ///   [{providerId, model, label?}, ...]
+  /// providerId can be the special value "__prometheus__" for the built-in pool.
+  steps       String   @default("[]")
+  /// Auto-route enabled in chat (shown in dropdown alongside individual models)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, slug])
+  @@index([userId])
 }

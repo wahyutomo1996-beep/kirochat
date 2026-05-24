@@ -14,6 +14,8 @@ import {
 } from '@/lib/vision';
 import { PROMETHEUS_PROVIDER_ID } from '@/lib/constants';
 import { apiError, errorMessage } from '@/lib/http';
+import { resolveCombo, parseComboRef, isFallThroughError } from '@/lib/combo-dispatch';
+import { compressMessages } from '@/lib/rtk-compression';
 
 interface ChatPayload {
   conversationId?: string | null;
@@ -249,6 +251,69 @@ async function dispatchStream(
   return { ...result, kiroAccountId: null };
 }
 
+/**
+ * Combo-aware dispatch. If `comboSteps` is provided, walks the chain:
+ * try step 0; on rate-limit / quota / transient error, try step 1; etc.
+ *
+ * Returns the FIRST successful step's stream + records which step won
+ * via the `winningStepIndex` field so the UI can show "served from
+ * fallback step 2 (Claude Sonnet)".
+ *
+ * If all steps fail, throws the last error.
+ */
+async function dispatchComboStream(
+  userId: string,
+  steps: Array<{ provider: ResolvedProvider; model: string }>,
+  messages: ChatMessage[],
+): Promise<{
+  stream: ReadableStream;
+  getUsage: () => { promptTokens: number; completionTokens: number; totalTokens: number };
+  kiroAccountId: string | null;
+  winningStepIndex: number;
+  winningProviderName: string;
+  winningModel: string;
+  attemptErrors: Array<{ stepIndex: number; providerName: string; model: string; error: string }>;
+}> {
+  const errors: Array<{ stepIndex: number; providerName: string; model: string; error: string }> = [];
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    const decision: VisionRouteDecision = {
+      provider: step.provider,
+      model: step.model,
+      rerouted: false,
+    };
+    try {
+      const result = await dispatchStream(userId, decision, messages);
+      return {
+        ...result,
+        winningStepIndex: i,
+        winningProviderName: step.provider.name,
+        winningModel: step.model,
+        attemptErrors: errors,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push({
+        stepIndex: i,
+        providerName: step.provider.name,
+        model: step.model,
+        error: msg.slice(0, 200),
+      });
+
+      // Only fall through on transient/quota errors. Hard errors
+      // (model-not-found, malformed payload) bubble immediately.
+      if (!isFallThroughError(err) || i === steps.length - 1) {
+        throw err;
+      }
+      // Otherwise continue to next step
+    }
+  }
+
+  // Unreachable - the loop either returns or throws on last iteration
+  throw new Error('Combo dispatch exhausted with no result');
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Route handler                                                             */
 /* -------------------------------------------------------------------------- */
@@ -277,16 +342,68 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Provider and model required' }, { status: 400 });
     }
 
-    // ---- Resolve selected provider ----
-    const selectedResult = await resolveProvider(userId, providerId);
-    if ('error' in selectedResult) {
-      return NextResponse.json({ error: selectedResult.error }, { status: selectedResult.status });
+    // ---- Combo detection ----
+    // If providerId is "combo", resolve the model field as a combo slug.
+    // Combos let users define ordered chains of (provider, model) tried in
+    // sequence with auto-fallback on rate-limit / quota / transient errors.
+    let comboSteps: Array<{ provider: ResolvedProvider; model: string }> | null = null;
+    let comboName = '';
+    if (providerId === 'combo') {
+      const slug = parseComboRef(model);
+      if (!slug) {
+        return NextResponse.json(
+          { error: 'Invalid combo slug. Expected slug like "coding-premium".' },
+          { status: 400 },
+        );
+      }
+      const combo = await resolveCombo(userId, slug);
+      if (!combo) {
+        return NextResponse.json(
+          { error: `Combo "${slug}" not found or has no steps. Create one in Settings.` },
+          { status: 404 },
+        );
+      }
+      comboName = combo.name;
+
+      // Resolve each step's provider once up-front so we don't re-query DB
+      // per fall-through attempt.
+      const resolved: Array<{ provider: ResolvedProvider; model: string }> = [];
+      for (const step of combo.steps) {
+        const r = await resolveProvider(userId, step.providerId);
+        if ('error' in r) {
+          // Skip steps whose provider was deleted/disabled, but log
+          continue;
+        }
+        resolved.push({ provider: r, model: step.model });
+      }
+      if (resolved.length === 0) {
+        return NextResponse.json(
+          {
+            error: `Combo "${combo.name}" has no usable steps. All referenced providers were deleted or disabled.`,
+          },
+          { status: 400 },
+        );
+      }
+      comboSteps = resolved;
+      // For tracking purposes we use the FIRST step initially. We'll
+      // overwrite with the actual winning step after dispatch.
+      trackingProviderId = comboSteps[0].provider.isBuiltin ? null : comboSteps[0].provider.row?.id ?? null;
+      trackingProviderName = `combo:${combo.name}`;
     }
 
-    // ---- Vision routing decision ----
-    const decision = await resolveVisionRoute(userId, selectedResult, model, images.length > 0);
-    trackingProviderId = decision.provider.isBuiltin ? null : decision.provider.row?.id ?? null;
-    trackingProviderName = decision.provider.name;
+    // ---- Resolve selected provider (non-combo path) ----
+    let decision: VisionRouteDecision | null = null;
+    if (!comboSteps) {
+      const selectedResult = await resolveProvider(userId, providerId);
+      if ('error' in selectedResult) {
+        return NextResponse.json({ error: selectedResult.error }, { status: selectedResult.status });
+      }
+
+      // ---- Vision routing decision ----
+      decision = await resolveVisionRoute(userId, selectedResult, model, images.length > 0);
+      trackingProviderId = decision.provider.isBuiltin ? null : decision.provider.row?.id ?? null;
+      trackingProviderName = decision.provider.name;
+    }
 
     // ---- Get or create conversation ----
     convId = conversationId ?? null;
@@ -319,31 +436,75 @@ export async function POST(request: NextRequest) {
       orderBy: { createdAt: 'asc' },
     });
 
-    const targetSupportsImages = !isKiroBacked(decision.provider.row, decision.provider.isBuiltin);
-    const apiMessages = buildApiMessages(dbMessages, targetSupportsImages);
+    // For combo: use first step to decide image support; the dispatcher
+    // will reroute internally if a step doesn't support images.
+    const firstProvider = comboSteps ? comboSteps[0].provider : decision!.provider;
+    const targetSupportsImages = !isKiroBacked(firstProvider.row, firstProvider.isBuiltin);
+    const rawApiMessages = buildApiMessages(dbMessages, targetSupportsImages);
+
+    // ---- RTK compression (saves 20-40% tokens on tool-output content) ----
+    const { messages: apiMessages, stats: rtkStats } = compressMessages(rawApiMessages);
 
     // ---- Dispatch ----
-    const {
-      stream: upstreamStream,
-      getUsage,
-      kiroAccountId,
-    } = await dispatchStream(userId, decision, apiMessages);
+    let upstreamStream: ReadableStream;
+    let getUsage: () => { promptTokens: number; completionTokens: number; totalTokens: number };
+    let kiroAccountId: string | null;
+    let winningProviderName = trackingProviderName;
+    let winningModel = model;
+    let comboFallbackInfo: {
+      stepIndex: number;
+      attemptErrors: Array<{ stepIndex: number; providerName: string; model: string; error: string }>;
+    } | null = null;
+
+    if (comboSteps) {
+      const result = await dispatchComboStream(userId, comboSteps, apiMessages);
+      upstreamStream = result.stream;
+      getUsage = result.getUsage;
+      kiroAccountId = result.kiroAccountId;
+      winningProviderName = result.winningProviderName;
+      winningModel = result.winningModel;
+      // Update tracking provider to the actual winner
+      const winner = comboSteps[result.winningStepIndex].provider;
+      trackingProviderId = winner.isBuiltin ? null : winner.row?.id ?? null;
+      comboFallbackInfo = {
+        stepIndex: result.winningStepIndex,
+        attemptErrors: result.attemptErrors,
+      };
+    } else {
+      const result = await dispatchStream(userId, decision!, apiMessages);
+      upstreamStream = result.stream;
+      getUsage = result.getUsage;
+      kiroAccountId = result.kiroAccountId;
+      winningProviderName = decision!.provider.name;
+      winningModel = decision!.model;
+    }
 
     // ---- Pipe through SSE transformer ----
     let fullResponse = '';
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
 
-    // Pre-emit a routing notice if we silently rerouted
-    const routingPrefix = decision.rerouted
-      ? `data: ${JSON.stringify({
-          rerouted: true,
-          from: decision.originalProviderName,
-          to: decision.provider.name,
-          model: decision.model,
-          conversationId: convId,
-        })}\n\n`
-      : null;
+    // Pre-emit metadata: combo fallback notice OR vision rerouted notice
+    let routingPrefix: string | null = null;
+    if (comboFallbackInfo && comboFallbackInfo.stepIndex > 0) {
+      routingPrefix = `data: ${JSON.stringify({
+        comboFallback: true,
+        stepIndex: comboFallbackInfo.stepIndex,
+        winningProvider: winningProviderName,
+        winningModel,
+        skippedSteps: comboFallbackInfo.attemptErrors,
+        comboName,
+        conversationId: convId,
+      })}\n\n`;
+    } else if (decision?.rerouted) {
+      routingPrefix = `data: ${JSON.stringify({
+        rerouted: true,
+        from: decision.originalProviderName,
+        to: decision.provider.name,
+        model: decision.model,
+        conversationId: convId,
+      })}\n\n`;
+    }
 
     const transformStream = new TransformStream({
       start(controller) {
@@ -385,7 +546,7 @@ export async function POST(request: NextRequest) {
           };
         }
 
-        const cost = estimateCost(decision.model, usage.promptTokens, usage.completionTokens);
+        const cost = estimateCost(winningModel, usage.promptTokens, usage.completionTokens);
 
         if (!fullResponse || !convId) return;
 
@@ -394,7 +555,7 @@ export async function POST(request: NextRequest) {
             conversationId: convId,
             role: 'assistant',
             content: fullResponse,
-            model: decision.model,
+            model: winningModel,
             promptTokens: usage.promptTokens,
             completionTokens: usage.completionTokens,
             totalTokens: usage.totalTokens,
@@ -408,7 +569,7 @@ export async function POST(request: NextRequest) {
             providerId: trackingProviderId,
             providerName: trackingProviderName,
             kiroAccountId,
-            model: decision.model,
+            model: winningModel,
             promptTokens: usage.promptTokens,
             completionTokens: usage.completionTokens,
             totalTokens: usage.totalTokens,
@@ -444,21 +605,31 @@ export async function POST(request: NextRequest) {
 
     upstreamStream.pipeThrough(transformStream);
 
-    return new Response(transformStream.readable, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'X-Conversation-Id': convId!,
-        ...(decision.rerouted
-          ? {
-              'X-Vision-Rerouted': '1',
-              'X-Vision-From': encodeURIComponent(decision.originalProviderName ?? ''),
-              'X-Vision-To': encodeURIComponent(decision.provider.name),
-            }
-          : {}),
-      },
-    });
+    // Build response headers - include vision rerouted flags only on the
+    // non-combo path (combo handles its own routing internally)
+    const responseHeaders: Record<string, string> = {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Conversation-Id': convId!,
+    };
+
+    if (rtkStats && rtkStats.blocksCompressed > 0) {
+      responseHeaders['X-RTK-Saved'] = String(rtkStats.bytesBefore - rtkStats.bytesAfter);
+      responseHeaders['X-RTK-Blocks'] = String(rtkStats.blocksCompressed);
+    }
+
+    if (decision?.rerouted) {
+      responseHeaders['X-Vision-Rerouted'] = '1';
+      responseHeaders['X-Vision-From'] = encodeURIComponent(decision.originalProviderName ?? '');
+      responseHeaders['X-Vision-To'] = encodeURIComponent(decision.provider.name);
+    }
+    if (comboFallbackInfo && comboFallbackInfo.stepIndex > 0) {
+      responseHeaders['X-Combo-Fallback'] = String(comboFallbackInfo.stepIndex);
+      responseHeaders['X-Combo-Winner'] = encodeURIComponent(`${winningProviderName}/${winningModel}`);
+    }
+
+    return new Response(transformStream.readable, { headers: responseHeaders });
   } catch (error: unknown) {
     const message = errorMessage(error);
 

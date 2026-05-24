@@ -97,6 +97,7 @@ export const API_TAGS = [
   'ApiKey',
   'Health',
   'AdminUser',
+  'Combo',
 ] as const;
 
 export type ApiTag = (typeof API_TAGS)[number];
