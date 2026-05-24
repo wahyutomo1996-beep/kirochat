@@ -36,6 +36,20 @@ interface Provider {
   accountCount?: number;
 }
 
+/**
+ * Combo as exposed in the chat dropdown. We keep a separate type from the
+ * RTK Query Combo type so this file stays self-contained — same shape.
+ */
+interface ChatCombo {
+  id: string;
+  slug: string;
+  name: string;
+  category: string;
+  icon: string;
+  isActive: boolean;
+  steps: Array<{ providerId: string; model: string; label?: string }>;
+}
+
 export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConv, setCurrentConv] = useState<string | null>(null);
@@ -43,6 +57,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [combos, setCombos] = useState<ChatCombo[]>([]);
   const [selectedProvider, setSelectedProvider] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [models, setModels] = useState<string[]>([]);
@@ -58,7 +73,7 @@ export default function ChatPage() {
 
   // Initial bootstrap
   useEffect(() => {
-    Promise.all([fetchUser(), fetchProviders(), fetchConversations()])
+    Promise.all([fetchUser(), fetchProviders(), fetchConversations(), fetchCombos()])
       .finally(() => setInitialLoad(false));
   }, []);
 
@@ -118,6 +133,22 @@ export default function ChatPage() {
   const fetchConversations = async () => {
     const res = await fetch('/api/conversations');
     if (res.ok) { const data = await res.json(); setConversations(data.conversations); }
+  };
+
+  /**
+   * Fetch user's combos and surface them in the model dropdown alongside
+   * raw models. When the user picks a combo, providerId becomes "combo"
+   * and model becomes the slug — the chat route handles the rest.
+   */
+  const fetchCombos = async () => {
+    try {
+      const res = await fetch('/api/combos');
+      if (!res.ok) return;
+      const data = await res.json();
+      setCombos((data.combos as ChatCombo[]).filter((c) => c.isActive));
+    } catch {
+      /* combos optional */
+    }
   };
 
   const fetchMessages = async (convId: string) => {
@@ -378,25 +409,52 @@ export default function ChatPage() {
           </button>
 
           <div className="flex items-center gap-2">
-            <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value)}
+            <select value={selectedProvider} onChange={(e) => {
+              setSelectedProvider(e.target.value);
+              // Picking the provider dropdown clears any combo selection
+              setSelectedModel('');
+            }}
               className="bg-surface-1 border border-edge text-white text-xs rounded-md px-2.5 py-1.5 focus:outline-none focus:border-edge-hover cursor-pointer hover:border-edge-hover transition-colors">
               <option value="">Select Provider</option>
-              {providers.map((p) => {
-                if (p.builtin) {
-                  const count = p.accountCount ?? 0;
-                  const label = count > 0
-                    ? `${p.name} (built-in, ${count} account${count > 1 ? 's' : ''})`
-                    : `${p.name} (built-in, no accounts)`;
-                  return <option key={p.id} value={p.id} disabled={count === 0}>{label}</option>;
-                }
-                return <option key={p.id} value={p.id}>{p.name}</option>;
-              })}
+              {combos.length > 0 && (
+                <optgroup label="\uD83C\uDFAF Combos (auto-fallback)">
+                  <option value="combo">Use a Combo \u2193</option>
+                </optgroup>
+              )}
+              <optgroup label="Providers">
+                {providers.map((p) => {
+                  if (p.builtin) {
+                    const count = p.accountCount ?? 0;
+                    const label = count > 0
+                      ? `${p.name} (built-in, ${count} account${count > 1 ? 's' : ''})`
+                      : `${p.name} (built-in, no accounts)`;
+                    return <option key={p.id} value={p.id} disabled={count === 0}>{label}</option>;
+                  }
+                  return <option key={p.id} value={p.id}>{p.name}</option>;
+                })}
+              </optgroup>
             </select>
 
             <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}
-              className="bg-surface-1 border border-edge text-white text-xs rounded-md px-2.5 py-1.5 focus:outline-none focus:border-edge-hover cursor-pointer hover:border-edge-hover transition-colors max-w-[220px]">
-              <option value="">Select Model</option>
-              {models.map((m) => (<option key={m} value={m}>{m}</option>))}
+              className="bg-surface-1 border border-edge text-white text-xs rounded-md px-2.5 py-1.5 focus:outline-none focus:border-edge-hover cursor-pointer hover:border-edge-hover transition-colors max-w-[260px]">
+              <option value="">{selectedProvider === 'combo' ? 'Select Combo' : 'Select Model'}</option>
+              {selectedProvider === 'combo' ? (
+                <>
+                  {Array.from(new Set(combos.map((c) => c.category))).map((cat) => (
+                    <optgroup key={cat} label={cat.charAt(0).toUpperCase() + cat.slice(1)}>
+                      {combos
+                        .filter((c) => c.category === cat)
+                        .map((c) => (
+                          <option key={c.id} value={c.slug}>
+                            {c.icon} {c.name} ({c.steps.length} steps)
+                          </option>
+                        ))}
+                    </optgroup>
+                  ))}
+                </>
+              ) : (
+                models.map((m) => (<option key={m} value={m}>{m}</option>))
+              )}
             </select>
           </div>
 
