@@ -314,6 +314,26 @@
   .animate-wave-dot {
     animation: waveDot 1.2s infinite ease-in-out;
   }
+  /*
+   * Toast bounce-in: slides in from right with a slight overshoot,
+   * settles smoothly. Cubic-bezier with y > 1 produces the bounce.
+   * 420ms is long enough to feel deliberate but quick enough to not
+   * delay the user's read.
+   */
+  .animate-toast-bounce {
+    animation: toastBounce 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  /*
+   * Send button squash: micro tactile feedback on press. Used as
+   * active: pseudo-state. Triggers when user clicks send.
+   */
+  .btn-squash {
+    transition: transform 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .btn-squash:active:not(:disabled) {
+    transform: scale(0.92);
+    transition-duration: 60ms;
+  }
   .glass {
     background: rgba(13, 13, 13, 0.65);
     backdrop-filter: blur(16px) saturate(140%);
@@ -428,5 +448,25 @@
   30% {
     transform: translateY(-6px);
     opacity: 1;
+  }
+}
+
+/*
+ * Toast entrance: starts to the right + below, overshoots slightly past
+ * the rest position, then settles. Combined opacity + transform for
+ * smoothness. The overshoot uses cubic-bezier with y > 1.
+ */
+@keyframes toastBounce {
+  0% {
+    opacity: 0;
+    transform: translateX(40px) translateY(8px) scale(0.9);
+  }
+  60% {
+    opacity: 1;
+    transform: translateX(-4px) translateY(-2px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
   }
 }

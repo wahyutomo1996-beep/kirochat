@@ -627,8 +627,47 @@ export default function ChatPage() {
                 <p className="text-txt-muted text-sm mt-1.5 leading-relaxed">
                   {activeWs?.description ?? 'Type a message or upload an image'}
                 </p>
+
+                {/* Suggested prompts per workspace - clicking sets the input */}
+                <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {(activeWs?.name === 'Coding'
+                    ? [
+                        { icon: '\u{1F41B}', text: 'Why is my useEffect running infinitely?' },
+                        { icon: '\u26A1', text: 'Optimize this SQL query for read-heavy load' },
+                        { icon: '\u{1F9EA}', text: 'Write tests for this function' },
+                        { icon: '\u{1F50D}', text: 'Review this PR for security issues' },
+                      ]
+                    : activeWs?.name === 'Trading'
+                    ? [
+                        { icon: '\u{1F4C8}', text: 'Read this BTC chart — what\u2019s the setup?' },
+                        { icon: '\u{1F50D}', text: 'Explain the BTC dominance index' },
+                        { icon: '\u26A0\uFE0F', text: 'Risk-manage a $10k portfolio for Q2' },
+                        { icon: '\u{1F4F0}', text: 'Summarize today\u2019s key macro news' },
+                      ]
+                    : [
+                        { icon: '\u270D\uFE0F', text: 'Help me draft an email to my team' },
+                        { icon: '\u{1F4DA}', text: 'Explain quantum computing simply' },
+                        { icon: '\u{1F4A1}', text: 'Brainstorm 5 names for a new product' },
+                        { icon: '\u{1F30D}', text: 'Plan a 7-day trip to Bali' },
+                      ]).map((p, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        setInput(p.text);
+                        textareaRef.current?.focus();
+                      }}
+                      className="text-left px-3 py-2.5 rounded-xl bg-surface-1/40 hover:bg-surface-2/60 border border-edge/60 hover:border-edge-hover backdrop-blur-sm hover-lift text-xs text-txt-secondary hover:text-white flex items-start gap-2 group/sug"
+                      style={{ animationDelay: `${i * 60}ms` }}
+                    >
+                      <span className="shrink-0 text-base group-hover/sug:scale-110 transition-transform">{p.icon}</span>
+                      <span className="leading-snug">{p.text}</span>
+                    </button>
+                  ))}
+                </div>
+
                 {resolvedProviderId === 'combo' && (
-                  <p className="text-[11px] text-txt-faint mt-3 font-mono">
+                  <p className="text-[11px] text-txt-faint mt-5 font-mono">
                     Using combo <span className="ws-tint-text">{resolvedModel}</span>
                   </p>
                 )}
@@ -768,9 +807,22 @@ export default function ChatPage() {
                 className="flex-1 bg-transparent text-sm text-white placeholder:text-txt-ghost focus:outline-none resize-none max-h-40 leading-relaxed py-1.5"
                 rows={1}
               />
-              <button onClick={sendMessage} disabled={streaming || (!input.trim() && images.length === 0)}
-                className="bg-white text-black hover:bg-brand-dim disabled:bg-surface-3 disabled:text-txt-faint disabled:cursor-not-allowed transition-colors p-1.5 rounded-md shrink-0 self-end">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" /></svg>
+              <button
+                onClick={sendMessage}
+                disabled={streaming || (!input.trim() && images.length === 0)}
+                style={
+                  !streaming && (input.trim() || images.length > 0)
+                    ? {
+                        background: `linear-gradient(135deg, var(--ws-active), var(--ws-active-bright))`,
+                        boxShadow: `0 4px 16px -4px rgba(var(--ws-active-glow) / 0.6)`,
+                      }
+                    : undefined
+                }
+                className="text-white disabled:bg-surface-3 disabled:text-txt-faint disabled:cursor-not-allowed disabled:shadow-none btn-squash p-1.5 rounded-md shrink-0 self-end"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
               </button>
             </div>
             <p className="text-[11px] text-txt-muted text-center mt-2">
