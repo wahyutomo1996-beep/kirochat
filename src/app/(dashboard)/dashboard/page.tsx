@@ -1,32 +1,28 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+/**
+ * Dashboard — usage analytics page.
+ *
+ * Refactored from manual fetch to RTK Query. Now:
+ *   - One hook (`useGetDashboardQuery`) replaces useState + useEffect + fetch
+ *   - Loading / error / data flow handled by the hook
+ *   - 401 redirect centralized in baseApi.ts
+ *   - Auto-refetch when window regains focus or network reconnects
+ *   - Cache hit when switching ranges back-and-forth (instant, no flicker)
+ *   - Auto-invalidates after kiro account mutations elsewhere in the app
+ *     (the Settings page adds a Kiro account → dashboard refetches itself)
+ */
+
+import { useState } from 'react';
 import { Button } from '@/components/Button';
 import { Badge } from '@/components/Badge';
 import { LoadingState } from '@/components/LoadingState';
+import {
+  useGetDashboardQuery,
+  type DashboardRange,
+} from '@/lib/store/api/dashboardApi';
 
-interface DashboardData {
-  range: string;
-  summary: {
-    totalRequests: number;
-    successCount: number;
-    errorCount: number;
-    successRate: number;
-    totalPromptTokens: number;
-    totalCompletionTokens: number;
-    totalTokens: number;
-    totalCost: number;
-    avgLatency: number;
-    totalConversations: number;
-    totalProviders: number;
-  };
-  byModel: { model: string; requests: number; tokens: number; cost: number }[];
-  byProvider: { providerName: string; requests: number; tokens: number; cost: number }[];
-  timeline: { date: string; requests: number; tokens: number; cost: number }[];
-  recent: { providerName: string; model: string; tokens: number; cost: number; latencyMs: number; success: boolean; createdAt: string }[];
-}
-
-const RANGES = [
+const RANGES: Array<{ value: DashboardRange; label: string }> = [
   { value: '24h', label: '24 hours' },
   { value: '7d', label: '7 days' },
   { value: '30d', label: '30 days' },
@@ -34,20 +30,10 @@ const RANGES = [
 ];
 
 export default function DashboardPage() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [range, setRange] = useState('7d');
+  const [range, setRange] = useState<DashboardRange>('7d');
+  const { data, isLoading } = useGetDashboardQuery(range);
 
-  useEffect(() => {
-    setLoading(true);
-    fetch(`/api/dashboard?range=${range}`)
-      .then(res => res.ok ? res.json() : Promise.reject(res))
-      .then(setData)
-      .catch(() => { window.location.href = '/login'; })
-      .finally(() => setLoading(false));
-  }, [range]);
-
-  if (loading || !data) return <LoadingState fullScreen />;
+  if (isLoading || !data) return <LoadingState fullScreen />;
 
   const formatNumber = (n: number) => n.toLocaleString('en-US');
   const formatCost = (c: number) => `$${c.toFixed(c < 0.01 ? 6 : 4)}`;

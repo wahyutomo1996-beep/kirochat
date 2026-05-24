@@ -1,36 +1,49 @@
 'use client';
 
+/**
+ * Login page — showcases RTK Query mutation pattern.
+ *
+ * Pattern: useMutation hook returns a tuple [trigger, state]. Call the
+ * trigger with payload, await `.unwrap()` to throw on error (so try/catch
+ * works naturally). The state object exposes isLoading / error /
+ * isSuccess that we can use directly in JSX without manual useState.
+ *
+ * After success: invalidate 'Auth' tag (handled by the endpoint definition
+ * in authApi) so any component subscribed to useGetMeQuery refetches the
+ * fresh user state. Then router.push to /chat.
+ */
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { Alert } from '@/components/Alert';
+import { useLoginMutation } from '@/lib/store/api/authApi';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  // Mutation hook returns a stable trigger function + a state object.
+  // `isLoading` reflects the in-flight request without manual useState.
+  const [login, { isLoading }] = useLoginMutation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error); return; }
+      // .unwrap() converts RTK Query's success/error envelope into a
+      // throw-on-error promise so we can use plain try/catch.
+      await login({ email, password }).unwrap();
+      // The 'Auth' tag invalidation in authApi means any useGetMeQuery
+      // subscriber will refetch the fresh session automatically.
       router.push('/chat');
-    } catch {
-      setError('Gagal terhubung ke server');
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      const data = (err as { data?: { error?: string } })?.data;
+      setError(data?.error ?? 'Gagal terhubung ke server');
     }
   };
 
@@ -68,7 +81,7 @@ export default function LoginPage() {
             required
           />
 
-          <Button type="submit" loading={loading} className="w-full mt-2">
+          <Button type="submit" loading={isLoading} className="w-full mt-2">
             Sign in
           </Button>
         </form>
