@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:clean": "node -e \"const fs=require('fs');try{fs.rmSync('.next',{recursive:true,force:true});fs.rmSync('node_modules/.cache',{recursive:true,force:true});console.log('Cache cleared')}catch(e){}\" && next dev",
     "build": "next build",
     "start": "next start",
+    "clean": "node -e \"const fs=require('fs');['.next','node_modules/.cache'].forEach(p=>{try{fs.rmSync(p,{recursive:true,force:true});console.log('Removed',p)}catch(e){}})\"",
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
