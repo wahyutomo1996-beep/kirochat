@@ -24,13 +24,29 @@ import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolk
  */
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
+/**
+ * Read the CSRF cookie value from document.cookie. Returns null if missing.
+ * The cookie is NOT httpOnly precisely so we can do this.
+ */
+function readCsrfCookie(): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: API_BASE_URL,
   // Cookie-based auth - JWT lives in httpOnly cookie 'token'
   credentials: 'include',
-  prepareHeaders: (headers) => {
+  prepareHeaders: (headers, { type }) => {
     if (!headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
+    }
+    // Echo CSRF cookie back in header for mutations. The middleware
+    // verifies this matches the cookie + is HMAC-valid for the user.
+    if (type === 'mutation') {
+      const csrf = readCsrfCookie();
+      if (csrf) headers.set('X-CSRF-Token', csrf);
     }
     return headers;
   },

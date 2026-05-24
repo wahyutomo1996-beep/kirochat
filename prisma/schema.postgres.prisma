@@ -1,0 +1,178 @@
+// =============================================================================
+// PostgreSQL schema alternative
+// =============================================================================
+//
+// This file exists so operators can migrate from SQLite to Postgres for
+// production scale (100+ users). The schema is identical to schema.prisma
+// in structure — only the provider and a couple of column types differ.
+//
+// HOW TO MIGRATE:
+//
+//   1. Provision Postgres
+//      - Render: free tier, easy
+//      - Neon: serverless, generous free tier
+//      - Supabase: free + dashboard included
+//      - Self-host: postgres:16-alpine docker image
+//
+//   2. Set DATABASE_URL in .env to your Postgres connection string:
+//      DATABASE_URL="postgresql://user:pass@host:5432/prometheus"
+//
+//   3. Replace schema.prisma with this file:
+//      mv prisma/schema.prisma prisma/schema.sqlite.prisma
+//      cp prisma/schema.postgres.prisma prisma/schema.prisma
+//
+//   4. Generate the new client and create initial migration:
+//      npx prisma generate
+//      npx prisma migrate deploy   # if you already have migrations
+//      npx prisma db push          # for first-time setup, no migrations
+//
+//   5. (Optional) Migrate data from SQLite to Postgres:
+//      npx prisma db pull --schema=prisma/schema.sqlite.prisma   # confirm schema
+//      Use a script or pgloader to copy rows. For tiny deployments, the
+//      easiest is `prisma studio` on each side and copy-paste critical rows.
+//
+// WHY POSTGRES MATTERS AT SCALE:
+//   - SQLite has one writer at a time. 50+ concurrent users = lock contention.
+//   - Postgres backs up online (pg_dump, snapshots) without app downtime.
+//   - Postgres works with horizontal scale (stateless app instances).
+//   - SQLite corrupts on crash mid-write; Postgres has WAL.
+//
+// PRESERVED FROM SQLite SCHEMA:
+//   - cuid IDs (still strings)
+//   - All field names and indexes
+//   - The same Prisma model relationships
+//
+// CHANGED FROM SQLite SCHEMA:
+//   - provider = "postgresql"
+//   - Use @db.Text for unbounded strings (refresh tokens, error messages,
+//     long content) — Postgres VARCHAR has a 64-char default in Prisma.
+//   - That's it. Everything else is identical.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String         @id @default(cuid())
+  email               String         @unique
+  username            String         @unique
+  password            String
+  role                String         @default("user")
+  status              String         @default("pending")
+  apiKeyHash          String?        @unique
+  /// Forces password change on next login (used for default admin seed).
+  mustChangePassword  Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  providers           Provider[]
+  conversations       Conversation[]
+  usages              Usage[]
+  kiroAccounts        KiroAccount[]
+}
+
+model Provider {
+  id                String    @id @default(cuid())
+  userId            String
+  name              String
+  type              String
+  baseUrl           String
+  apiKey            String    @db.Text
+  models            String    @default("[]") @db.Text
+  modelsLastFetched DateTime?
+  isDefault         Boolean   @default(false)
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usages            Usage[]
+
+  @@index([userId])
+}
+
+model KiroAccount {
+  id                    String    @id @default(cuid())
+  userId                String
+  refreshToken          String    @db.Text
+  accessToken           String?   @db.Text
+  tokenExpiresAt        DateTime?
+  email                 String?
+  status                String    @default("active")
+  usageCount            Int       @default(0)
+  totalPromptTokens     Int       @default(0)
+  totalCompletionTokens Int       @default(0)
+  totalTokens           Int       @default(0)
+  totalRequests         Int       @default(0)
+  failedRequests        Int       @default(0)
+  lastUsed              DateTime?
+  lastError             String?   @db.Text
+  lastErrorAt           DateTime?
+  exhaustedAt           DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usages                Usage[]
+
+  @@index([userId, status])
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  userId    String
+  title     String    @default("New Chat")
+  model     String    @default("")
+  provider  String    @default("")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  messages  Message[]
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Message {
+  id               String       @id @default(cuid())
+  conversationId   String
+  role             String
+  content          String       @db.Text
+  images           String       @default("[]") @db.Text
+  model            String       @default("")
+  promptTokens     Int          @default(0)
+  completionTokens Int          @default(0)
+  totalTokens      Int          @default(0)
+  latencyMs        Int          @default(0)
+  createdAt        DateTime     @default(now())
+  conversation     Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+model Usage {
+  id               String       @id @default(cuid())
+  userId           String
+  providerId       String?
+  providerName     String
+  kiroAccountId    String?
+  model            String
+  promptTokens     Int          @default(0)
+  completionTokens Int          @default(0)
+  totalTokens      Int          @default(0)
+  latencyMs        Int          @default(0)
+  cost             Float        @default(0)
+  success          Boolean      @default(true)
+  errorMessage     String?      @db.Text
+  createdAt        DateTime     @default(now())
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider         Provider?    @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  kiroAccount      KiroAccount? @relation(fields: [kiroAccountId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([providerId, createdAt])
+  @@index([kiroAccountId, createdAt])
+  @@index([model, createdAt])
+}

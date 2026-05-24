@@ -21,8 +21,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Semua field wajib diisi' }, { status: 400 });
     }
 
-    if (password.length < 6) {
-      return NextResponse.json({ error: 'Password minimal 6 karakter' }, { status: 400 });
+    if (password.length < 10) {
+      return NextResponse.json({ error: 'Password minimal 10 karakter' }, { status: 400 });
+    }
+    // Require at least one digit and one letter to defeat trivial passwords
+    if (!/[0-9]/.test(password) || !/[a-zA-Z]/.test(password)) {
+      return NextResponse.json(
+        { error: 'Password harus mengandung huruf dan angka' },
+        { status: 400 },
+      );
     }
 
     if (!/^[a-zA-Z0-9_-]{3,30}$/.test(username)) {

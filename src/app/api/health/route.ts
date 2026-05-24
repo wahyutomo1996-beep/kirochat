@@ -1,30 +1,32 @@
 /**
  * Health check endpoint.
  *
- * Public, unauthenticated, designed for uptime monitors and load balancers.
- * Reports:
- *   - DB reachability
- *   - Pool depth (active vs exhausted Kiro accounts across all users)
- *   - Build/process info
+ * Public minimal version (no auth):
+ *   GET /api/health  → { status, db, uptime }  - safe for uptime monitors
  *
- * Response is always JSON. Status code:
+ * Admin-gated detail version (auth required, role=admin):
+ *   GET /api/health?detail=1  → adds pool depth, user counts
+ *
+ * Why detail is admin-only: leaking total user count and pool depth helps
+ * attackers reconnaissance ("does this site have many users? is the pool
+ * exhausted? perfect time to attack"). Public minimal info is enough for
+ * load balancers and uptime monitors.
+ *
+ * Status codes:
  *   200  fully healthy
- *   200  degraded (db OK, pool empty/all-exhausted) — still up, just no quota
+ *   200  degraded (db OK, pool empty/all-exhausted) — still up, no quota
  *   503  hard failure (db unreachable)
- *
- * Detail level:
- *   GET /api/health           — minimal (no per-user data)
- *   GET /api/health?detail=1  — adds aggregate pool stats
  */
 
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getSession } from '@/lib/auth';
 
 const startedAt = Date.now();
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const detail = url.searchParams.get('detail') === '1';
+  const wantsDetail = url.searchParams.get('detail') === '1';
 
   let dbOk = false;
   let dbLatencyMs = 0;
@@ -32,7 +34,6 @@ export async function GET(request: Request) {
 
   try {
     const t = Date.now();
-    // Cheapest possible read - confirms the connection works.
     await prisma.$queryRaw`SELECT 1`;
     dbLatencyMs = Date.now() - t;
     dbOk = true;
@@ -56,11 +57,22 @@ export async function GET(request: Request) {
     return NextResponse.json(base, { status: 503 });
   }
 
-  if (!detail) {
+  if (!wantsDetail) {
     return NextResponse.json(base, { status: 200 });
   }
 
-  // Aggregate pool depth across all users (no PII - just counts).
+  // Detail requires admin auth - prevents reconnaissance via public endpoint.
+  const session = await getSession().catch(() => null);
+  if (!session || session.role !== 'admin') {
+    return NextResponse.json(
+      {
+        ...base,
+        error: 'detail=1 requires admin authentication',
+      },
+      { status: 403 },
+    );
+  }
+
   let pool: {
     totalAccounts: number;
     activeAccounts: number;
@@ -85,7 +97,6 @@ export async function GET(request: Request) {
     /* pool stats best-effort - don't fail health on this */
   }
 
-  // Degraded but up: db works but the pool has no active accounts to dispatch.
   const degraded = pool !== null && pool.totalAccounts > 0 && pool.activeAccounts === 0;
 
   return NextResponse.json(

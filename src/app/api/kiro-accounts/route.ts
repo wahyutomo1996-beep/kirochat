@@ -25,7 +25,9 @@ export async function GET() {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Mask refresh tokens in response
+    // Mask refresh tokens in response. We deliberately show only the last
+    // 4 chars - leaking more (e.g. first 12) gives attackers enough entropy
+    // to correlate with leaks elsewhere or rainbow-table the tail.
     const safe = accounts.map(a => ({
       id: a.id,
       email: a.email,
@@ -35,12 +37,11 @@ export async function GET() {
       tokenExpiresAt: a.tokenExpiresAt,
       exhaustedAt: a.exhaustedAt,
       createdAt: a.createdAt,
-      // Show only first/last chars of token
       refreshTokenPreview: (() => {
         try {
           const dec = decrypt(a.refreshToken);
-          return `${dec.slice(0, 12)}...${dec.slice(-8)}`;
-        } catch { return '***'; }
+          return `\u2022\u2022\u2022\u2022${dec.slice(-4)}`;
+        } catch { return '\u2022\u2022\u2022\u2022'; }
       })(),
     }));
 

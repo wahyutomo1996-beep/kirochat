@@ -78,7 +78,10 @@ export default function SettingsPage() {
   const kiroAccounts = kiroData?.accounts ?? [];
   const kiroStats = usageData?.accounts ?? [];
   const kiroSummary = usageData?.summary ?? null;
+  // Plain API key is only present at first-time mint or after regenerate.
+  // Otherwise the server returns null and we just show a masked indicator.
   const apiKey = apiKeyData?.apiKey ?? '';
+  const hasStoredKey = Boolean(apiKeyData?.hasKey || apiKey);
 
   // ───────────────────────── mutations ──────────────────────────────────────
   const [addKiro, { isLoading: addingKiro }] = useAddKiroAccountMutation();
@@ -105,9 +108,11 @@ export default function SettingsPage() {
   const handleRegenerateKey = async () => {
     if (!confirm('Regenerate your API key? All clients using the old key will stop working.')) return;
     try {
-      await regenerateKey().unwrap();
-      setKeyVisible(true);
-      dispatch(showToast({ type: 'success', message: 'API key regenerated' }));
+      const result = await regenerateKey().unwrap();
+      if (result.apiKey) {
+        setKeyVisible(true);
+        dispatch(showToast({ type: 'success', message: 'API key regenerated — copy it now, it won\u2019t be shown again' }));
+      }
     } catch {
       dispatch(showToast({ type: 'error', message: 'Failed to regenerate key' }));
     }
@@ -227,7 +232,11 @@ export default function SettingsPage() {
   const activeAccounts = kiroAccounts.filter((a) => a.status === 'active').length;
   const exhaustedAccounts = kiroAccounts.filter((a) => a.status === 'exhausted').length;
   const baseUrl = typeof window !== 'undefined' ? `${window.location.origin}/v1` : '/v1';
-  const maskedKey = apiKey ? `${apiKey.slice(0, 8)}${'\u2022'.repeat(32)}${apiKey.slice(-6)}` : 'No key';
+  // We can only show the plain key at first-mint / regenerate. Otherwise just
+  // the masked placeholder, because the server stores only the hash.
+  const maskedKey = hasStoredKey
+    ? `pmt-${'\u2022'.repeat(40)} (regenerate to view)`
+    : 'No key';
 
   return (
     <div className="min-h-screen bg-surface-0">
@@ -275,12 +284,22 @@ export default function SettingsPage() {
               </label>
               <div className="flex items-center gap-2">
                 <code className="flex-1 px-3 py-2 bg-surface-2 border border-edge rounded-lg text-sm text-white font-mono break-all">
-                  {keyVisible ? apiKey : maskedKey}
+                  {keyVisible && apiKey ? apiKey : maskedKey}
                 </code>
-                <Button onClick={() => setKeyVisible(!keyVisible)} variant="ghost" size="sm">
+                <Button
+                  onClick={() => setKeyVisible(!keyVisible)}
+                  variant="ghost"
+                  size="sm"
+                  disabled={!apiKey}
+                >
                   {keyVisible ? 'Hide' : 'Show'}
                 </Button>
-                <Button onClick={() => handleCopy(apiKey, 'API key')} variant="ghost" size="sm">
+                <Button
+                  onClick={() => handleCopy(apiKey, 'API key')}
+                  variant="ghost"
+                  size="sm"
+                  disabled={!apiKey}
+                >
                   Copy
                 </Button>
                 <Button onClick={handleRegenerateKey} variant="outline" size="sm">
@@ -288,8 +307,11 @@ export default function SettingsPage() {
                 </Button>
               </div>
               <p className="text-[11px] text-txt-faint mt-2">
-                Use this key with any OpenAI SDK. Set <code className="text-txt-secondary">OPENAI_API_KEY</code>{' '}
-                and <code className="text-txt-secondary">OPENAI_BASE_URL</code> to the values above.
+                {apiKey
+                  ? 'Save this key now — for security, the server stores only a hash and cannot show it again.'
+                  : 'Your API key is hashed at rest. Use the Regenerate button to mint a new plain key.'}
+                {' '}Set <code className="text-txt-secondary">OPENAI_API_KEY</code>{' '}
+                and <code className="text-txt-secondary">OPENAI_BASE_URL</code> in any OpenAI-compatible client.
               </p>
             </div>
             <details className="group/sample">

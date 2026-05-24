@@ -7,19 +7,26 @@ services:
     ports:
       - "3000:3000"
     environment:
+      - NODE_ENV=production
       - DATABASE_URL=file:/app/data/prometheus.db
       - JWT_SECRET=${JWT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - NEXT_PUBLIC_APP_NAME=Prometheus
+      # Optional: tighten gateway rate limit / CORS for production
+      - GATEWAY_RPM=${GATEWAY_RPM:-60}
+      - GATEWAY_CORS_ORIGINS=${GATEWAY_CORS_ORIGINS:-}
+      - KIRO_REVIVE_COOLDOWN_HOURS=${KIRO_REVIVE_COOLDOWN_HOURS:-6}
     volumes:
       - prometheus-data:/app/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/login"]
+      # Hit the real health endpoint (verifies DB connection too).
+      # /login was checking only frontend HTML, missing DB outages.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
 volumes:
   prometheus-data:

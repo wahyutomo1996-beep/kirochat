@@ -7,6 +7,7 @@ import { recordKiroUsage } from '@/lib/kiro-pool';
 import { estimateTokens } from '@/lib/providers';
 import { estimateCost } from '@/lib/pricing';
 import { rateLimit } from '@/lib/ratelimit';
+import { readJsonBody, corsHeaders, PayloadTooLargeError } from '@/lib/http';
 
 interface ChatCompletionRequest {
   model: string;
@@ -17,15 +18,10 @@ interface ChatCompletionRequest {
   top_p?: number;
 }
 
-/**
- * Per-API-key rate limit for the OpenAI-compatible gateway.
- *
- * Defaults to 60 req/min — enough for normal interactive chat clients but low
- * enough to keep abusive tight loops from burning the whole pool. Configurable
- * via env: GATEWAY_RPM (requests per minute).
- */
 const GATEWAY_RPM = Math.max(1, parseInt(process.env.GATEWAY_RPM || '60', 10));
 const RATE_WINDOW_MS = 60_000;
+/** 5MB body limit for chat completions - room for base64 images, blocks DoS */
+const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 function flattenContent(content: ChatMessage['content']): string {
   if (typeof content === 'string') return content;
@@ -37,11 +33,18 @@ function flattenContent(content: ChatMessage['content']): string {
  *
  * Routes chat requests to the appropriate provider based on model ID.
  * Supports both streaming (SSE) and non-streaming responses.
+ *
+ * SECURITY:
+ *   - API key auth required (Bearer pmt-...)
+ *   - 5MB body limit (DoS protection)
+ *   - Per-API-key rate limit (configurable via GATEWAY_RPM)
+ *   - CORS off by default - opt in via GATEWAY_CORS_ORIGINS env
  */
 export async function POST(request: Request) {
   const startTime = Date.now();
   let userId = '';
   let modelUsed = '';
+  const cors = corsHeaders(request);
 
   try {
     const auth = await requireApiKey(request);
@@ -61,7 +64,7 @@ export async function POST(request: Request) {
         {
           status: 429,
           headers: {
-            'Access-Control-Allow-Origin': '*',
+            ...cors,
             'Retry-After': String(Math.ceil(limit.resetIn / 1000)),
             'X-RateLimit-Limit': String(GATEWAY_RPM),
             'X-RateLimit-Remaining': '0',
@@ -71,19 +74,19 @@ export async function POST(request: Request) {
       );
     }
 
-    const body: ChatCompletionRequest = await request.json();
+    const body = await readJsonBody<ChatCompletionRequest>(request, MAX_BODY_BYTES);
     const { model, messages, stream } = body;
 
     if (!model) {
       return NextResponse.json(
         { error: { message: 'model is required', type: 'invalid_request_error' } },
-        { status: 400 },
+        { status: 400, headers: cors },
       );
     }
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
         { error: { message: 'messages array is required', type: 'invalid_request_error' } },
-        { status: 400 },
+        { status: 400, headers: cors },
       );
     }
 
@@ -91,17 +94,16 @@ export async function POST(request: Request) {
     if (!found) {
       return NextResponse.json(
         { error: { message: `Model ${model} not found. Use /v1/models to list available models.`, type: 'invalid_request_error', code: 'model_not_found' } },
-        { status: 404 },
+        { status: 404, headers: cors },
       );
     }
 
     modelUsed = model;
 
-    // Currently only Kiro provider is supported via the public gateway
     if (found.model.provider !== 'kiro') {
       return NextResponse.json(
         { error: { message: `Provider ${found.model.provider} is not yet implemented. Only Kiro models are currently supported.`, type: 'invalid_request_error' } },
-        { status: 501 },
+        { status: 501, headers: cors },
       );
     }
 
@@ -114,8 +116,6 @@ export async function POST(request: Request) {
       const result = await streamKiroChat(userId, model, messages);
       const accountId = result.accountId;
 
-      // Tee the upstream SSE so we can read the assistant content for token
-      // accounting while still forwarding it byte-for-byte to the client.
       const encoder = new TextEncoder();
       const decoder = new TextDecoder();
       let fullResponse = '';
@@ -123,10 +123,7 @@ export async function POST(request: Request) {
 
       const accountingStream = new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {
-          // Forward raw bytes immediately - don't slow down the stream
           controller.enqueue(chunk);
-
-          // Parse OpenAI SSE chunks to recover assistant text for usage
           sseLineBuffer += decoder.decode(chunk, { stream: true });
           const lines = sseLineBuffer.split('\n');
           sseLineBuffer = lines.pop() ?? '';
@@ -138,9 +135,7 @@ export async function POST(request: Request) {
               const parsed = JSON.parse(data);
               const delta: string = parsed.choices?.[0]?.delta?.content || '';
               if (delta) fullResponse += delta;
-            } catch {
-              /* ignore non-JSON lines */
-            }
+            } catch { /* ignore */ }
           }
         },
         async flush() {
@@ -175,11 +170,11 @@ export async function POST(request: Request) {
 
       return new Response(result.stream.pipeThrough(accountingStream), {
         headers: {
+          ...cors,
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
+          Connection: 'keep-alive',
           'X-Accel-Buffering': 'no',
-          'Access-Control-Allow-Origin': '*',
           'X-RateLimit-Limit': String(GATEWAY_RPM),
           'X-RateLimit-Remaining': String(limit.remaining),
         },
@@ -242,13 +237,20 @@ export async function POST(request: Request) {
       },
       {
         headers: {
-          'Access-Control-Allow-Origin': '*',
+          ...cors,
           'X-RateLimit-Limit': String(GATEWAY_RPM),
           'X-RateLimit-Remaining': String(limit.remaining),
         },
       },
     );
   } catch (err) {
+    if (err instanceof PayloadTooLargeError) {
+      return NextResponse.json(
+        { error: { message: err.message, type: 'invalid_request_error', code: 'payload_too_large' } },
+        { status: 413, headers: cors },
+      );
+    }
+
     const message = err instanceof Error ? err.message : 'Internal error';
     const isAuth = message.includes('Authorization') || message.includes('API key') || message.includes('not approved');
     const isExhausted = message.includes('No active Kiro accounts') || message.includes('All Kiro accounts failed');
@@ -272,18 +274,14 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       { error: { message, type: 'api_error' } },
-      { status, headers: { 'Access-Control-Allow-Origin': '*' } },
+      { status, headers: cors },
     );
   }
 }
 
-export async function OPTIONS() {
+export async function OPTIONS(request: Request) {
   return new NextResponse(null, {
     status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-    },
+    headers: corsHeaders(request),
   });
 }

@@ -3,9 +3,14 @@
  *
  * Authenticates requests via Bearer API key in Authorization header.
  * Used by OpenAI-compatible /v1 endpoints.
+ *
+ * SECURITY: We look up by SHA-256 hash, never by plain key. The plain key is
+ * only present in the request and the user's clipboard - it's never stored
+ * in our DB. Even a full DB dump exposes only hashes.
  */
 
 import { prisma } from './prisma';
+import { hashApiKey } from './auth';
 
 export interface ApiKeyAuthResult {
   userId: string;
@@ -38,8 +43,11 @@ export async function requireApiKey(req: Request): Promise<ApiKeyAuthResult> {
     throw new Error('Invalid API key format. Expected: pmt-<...>');
   }
 
+  // Hash the presented key and look up by hash. This is constant-time at the
+  // DB level (B-tree index lookup) and the hash itself is fast (sha256 < 1µs).
+  const hash = hashApiKey(apiKey);
   const user = await prisma.user.findUnique({
-    where: { apiKey },
+    where: { apiKeyHash: hash },
   });
 
   if (!user) {
