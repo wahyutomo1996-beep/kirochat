@@ -62,10 +62,24 @@ export function WorkspaceBox({
           : 'bg-surface-1 border-edge hover:border-edge-hover hover:bg-surface-2'
       }`}
     >
-      <button
-        type="button"
+      {/*
+        Activate region uses a div with role=button instead of <button>
+        because we nest a separate chevron button inside, and nested
+        <button> is invalid HTML. Keyboard accessible via tabIndex + onKeyDown.
+      */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onActivate}
-        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onActivate();
+          }
+        }}
+        aria-label={`Switch to ${workspace.name} workspace`}
+        aria-pressed={isActive}
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-edge-hover/60 focus-visible:ring-inset"
       >
         <span className="text-base shrink-0">{workspace.icon}</span>
         <div className="flex-1 min-w-0">
@@ -86,8 +100,13 @@ export function WorkspaceBox({
             e.stopPropagation();
             setExpanded(!expanded);
           }}
-          className="shrink-0 p-1 rounded hover:bg-surface-3 text-txt-muted hover:text-white transition-colors"
-          aria-label="Toggle combo selector"
+          onKeyDown={(e) => {
+            // Prevent Space/Enter from bubbling to the parent activator
+            if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+          }}
+          className="shrink-0 p-1 rounded hover:bg-surface-3 text-txt-muted hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-edge-hover/60"
+          aria-label={expanded ? 'Hide combo selector' : 'Show combo selector'}
+          aria-expanded={expanded}
         >
           <svg
             className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`}
@@ -98,12 +117,16 @@ export function WorkspaceBox({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </button>
-      </button>
+      </div>
 
       {/* Inline combo selector */}
       {expanded && (
         <div className="px-3 pb-2.5 -mt-0.5">
+          <label className="sr-only" htmlFor={`combo-${workspace.id}`}>
+            Combo for {workspace.name}
+          </label>
           <select
+            id={`combo-${workspace.id}`}
             value={selectedComboSlug}
             onChange={(e) => onComboChange(e.target.value)}
             className="w-full px-2 py-1.5 bg-surface-0 border border-edge rounded text-xs text-white focus:outline-none focus:border-edge-hover"

@@ -1,0 +1,68 @@
+# Render deployment config.
+#
+# Drop this file at the repo root, then in Render dashboard:
+#   1. New > Blueprint
+#   2. Pick this repo
+#   3. Render reads render.yaml and provisions everything
+#
+# What it provisions:
+#   - prometheus-app:  the Next.js web service (Docker, auto-scale to 0 on idle)
+#   - prometheus-db:   managed Postgres (free tier 256MB, upgradable)
+#
+# After first deploy:
+#   1. The app boots, runs prisma db push, then seeds an admin user.
+#      Find the random password in Logs (printed once at first start).
+#   2. Visit https://<your-service>.onrender.com/login.
+#   3. Change the admin password (mustChangePassword=true forces this).
+#
+# Auto-deploys on every push to main. Render will rebuild the Docker
+# image and zero-downtime swap.
+
+services:
+  - type: web
+    name: prometheus-app
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter   # $7/mo. Use "free" if you don't mind the cold-start delay.
+    region: singapore   # closest to most users; oregon also fine
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        # Render injects the connection string from the database resource
+        fromDatabase:
+          name: prometheus-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: NEXT_PUBLIC_APP_NAME
+        value: Prometheus
+      - key: NEXT_PUBLIC_BASE_URL
+        # Render auto-fills <service-name>.onrender.com if you use sync: false
+        sync: false
+      - key: GATEWAY_RPM
+        value: '60'
+      - key: KIRO_REVIVE_COOLDOWN_HOURS
+        value: '6'
+      - key: DISABLE_FILESYSTEM_TOKEN_SCAN
+        value: '1'
+      - key: AUTH_COOKIE_SECURE
+        value: 'true'
+
+  # Optional: enable when you want to share rate-limit state across replicas.
+  # The free Render Redis tier covers most personal deployments.
+  # - type: redis
+  #   name: prometheus-redis
+  #   plan: free
+  #   ipAllowList: []   # default: only Render services can connect
+
+databases:
+  - name: prometheus-db
+    plan: free   # 256MB, retained 90 days; upgrade to "starter" $7 for 1GB + backups
+    region: singapore
+    databaseName: prometheus
+    user: prometheus

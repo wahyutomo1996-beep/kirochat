@@ -1,23 +1,46 @@
 # Prometheus
 
+[![CI](https://github.com/wahyutomo1996-beep/prometheus/actions/workflows/ci.yml/badge.svg)](https://github.com/wahyutomo1996-beep/prometheus/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Built with Next.js](https://img.shields.io/badge/Next.js-14-black?logo=next.js)](https://nextjs.org/)
+[![Tests: 71](https://img.shields.io/badge/tests-71%20passing-brightgreen)](#testing)
+
 Self-hosted multi-tenant AI chat platform with OpenAI-compatible API gateway.
 Routes through your own Kiro accounts, multiple external providers, and named
 combo chains with auto-fallback. Comes with RTK token compression that saves
 20-40% input tokens on tool-heavy requests.
 
+[Quick Start](#quick-start) ·
+[Features](#features) ·
+[API Gateway](#api-gateway) ·
+[Deploy](#production-deploy) ·
+[Architecture](#architecture)
+
+---
+
+## Architecture
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│                                                          │
-│  Web UI: ChatGPT-style with workspaces                  │
-│    💬 General · 💻 Coding · 📈 Trading                   │
-│                                                          │
-│  API Gateway: drop-in OpenAI replacement                │
-│    OPENAI_BASE_URL=http://localhost:3000/v1             │
-│                                                          │
-│  Built-in pool: rotates between your Kiro accounts      │
-│  Auto-recovery: revives exhausted accounts daily        │
-│                                                          │
-└─────────────────────────────────────────────────────────┘
+                  ┌──────────────────────────────────────────┐
+                  │              Prometheus                  │
+                  │                                          │
+   Browser ─────► │  Next.js 14 (App Router)                 │
+   (Web UI)       │   ├─ /chat        ChatGPT-style sidebar  │
+                  │   ├─ /settings    pool + combos + keys   │
+                  │   └─ /v1/chat/*   OpenAI gateway         │
+                  │                                          │
+   OpenAI SDK ──► │  /v1 layer                               │
+   (any client)   │   • RTK token compression (-20-40%)      │
+                  │   • Per-API-key rate limit               │
+                  │   • Auto-fallback combo dispatcher       │
+                  │                                          │
+                  │  Kiro Account Pool                       │
+                  │   • Round-robin between active accounts  │
+                  │   • Auto-recover exhausted (6h cooldown) │
+                  │   • Daily reset detection                │
+                  │                                          │
+                  │  Postgres / SQLite (Prisma)              │
+                  └──────────────────────────────────────────┘
 ```
 
 ## Features
@@ -192,14 +215,20 @@ For deploying Prometheus to a server with 100+ users, see
 - Sentry / uptime monitoring
 - Pre-launch security checklist
 
-Quick overview:
+### One-click deploys
+
+| Platform | Config | One-line install |
+|----------|--------|------------------|
+| **Fly.io** | [`fly.toml`](./fly.toml) included | `flyctl launch --copy-config` |
+| **Render** | [`render.yaml`](./render.yaml) blueprint | New > Blueprint > pick this repo |
+| **Docker Compose** | [`docker-compose.yml`](./docker-compose.yml) | `docker compose up -d --build` |
 
 ```bash
-# Generate secrets
+# Generate strong secrets first (any platform)
 export JWT_SECRET=$(openssl rand -hex 32)
 export ENCRYPTION_KEY=$(openssl rand -hex 32)
 
-# Docker compose ships a ready-to-use stack
+# Then deploy
 docker compose up -d --build
 docker compose logs -f prometheus
 # Watch the logs for the one-time admin password on first start

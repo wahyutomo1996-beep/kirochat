@@ -1,0 +1,69 @@
+# Fly.io deployment config.
+#
+# Drop this file at the repo root, then:
+#   1. Install flyctl (https://fly.io/docs/hands-on/install-flyctl/)
+#   2. flyctl auth login
+#   3. flyctl launch --copy-config --no-deploy   # imports this fly.toml
+#   4. flyctl postgres create --name prometheus-pg --region sin
+#   5. flyctl postgres attach -a prometheus-app prometheus-pg
+#      (sets DATABASE_URL automatically)
+#   6. flyctl secrets set \
+#        JWT_SECRET=$(openssl rand -hex 32) \
+#        ENCRYPTION_KEY=$(openssl rand -hex 32)
+#   7. flyctl deploy
+#
+# After deploy:
+#   - flyctl logs               # find admin password printed by the seed
+#   - flyctl status             # check VM/HTTP health
+#   - https://prometheus-app.fly.dev   (or your assigned hostname)
+
+app = "prometheus-app"
+primary_region = "sin"   # Singapore. Pick from https://fly.io/docs/reference/regions/
+kill_signal = "SIGTERM"
+kill_timeout = "30s"     # matches our graceful-shutdown handler timeout
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  HOSTNAME = "0.0.0.0"
+  NEXT_PUBLIC_APP_NAME = "Prometheus"
+  GATEWAY_RPM = "60"
+  KIRO_REVIVE_COOLDOWN_HOURS = "6"
+  DISABLE_FILESYSTEM_TOKEN_SCAN = "1"
+  AUTH_COOKIE_SECURE = "true"
+  # JWT_SECRET, ENCRYPTION_KEY, DATABASE_URL set via `flyctl secrets set`
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1   # keep one warm to avoid cold-start on chat
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 100
+    hard_limit = 200
+
+  # Health endpoint matches our /api/health (200 = healthy, 503 = degraded)
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  # For 100+ concurrent users, bump to:
+  #   size = "shared-cpu-2x"
+  #   memory = "1gb"
+
+[deploy]
+  release_command = "npx prisma db push --skip-generate"
+  strategy = "rolling"

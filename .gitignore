@@ -5,3 +5,5 @@ prisma/dev.db
 *.log
 
 tsconfig.tsbuildinfo
+# Workflow files (added manually via web UI - PAT lacks workflow scope)
+.github/
