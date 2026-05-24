@@ -17,7 +17,7 @@
  * That's pure UI state with no server backing, so it doesn't belong in Redux.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { Badge } from '@/components/Badge';
@@ -79,10 +79,27 @@ export default function SettingsPage() {
   const kiroAccounts = kiroData?.accounts ?? [];
   const kiroStats = usageData?.accounts ?? [];
   const kiroSummary = usageData?.summary ?? null;
-  // Plain API key is only present at first-time mint or after regenerate.
-  // Otherwise the server returns null and we just show a masked indicator.
-  const apiKey = apiKeyData?.apiKey ?? '';
-  const hasStoredKey = Boolean(apiKeyData?.hasKey || apiKey);
+
+  // The server only stores the SHA-256 hash of API keys, so plain key is
+  // returned ONLY at first-mint or regenerate. We persist it in local
+  // state across re-renders so Show/Copy keep working until the user
+  // navigates away. This buffer is never written to disk.
+  const [freshKey, setFreshKey] = useState<string | null>(null);
+
+  // Capture the plain key on first-mint (when GET /api/api-key auto-mints
+  // a new key for a user that doesn't have one yet). RTK Query will refetch
+  // on focus and the server will return null next time, so we have to grab
+  // it the moment we see it.
+  useEffect(() => {
+    if (apiKeyData?.apiKey && apiKeyData.isNew && !freshKey) {
+      setFreshKey(apiKeyData.apiKey);
+    }
+  }, [apiKeyData?.apiKey, apiKeyData?.isNew, freshKey]);
+
+  // Fall through priority: locally-cached fresh key, then any plain key
+  // RTK Query happens to have (first-mint case before useEffect above runs).
+  const apiKey = freshKey ?? apiKeyData?.apiKey ?? '';
+  const hasStoredKey = Boolean(apiKey || apiKeyData?.hasKey);
 
   // ───────────────────────── mutations ──────────────────────────────────────
   const [addKiro, { isLoading: addingKiro }] = useAddKiroAccountMutation();
@@ -111,8 +128,15 @@ export default function SettingsPage() {
     try {
       const result = await regenerateKey().unwrap();
       if (result.apiKey) {
+        // Stash the plain key in local state so Show/Copy keep working
+        // even after the GET query refetches (server returns null after).
+        setFreshKey(result.apiKey);
         setKeyVisible(true);
-        dispatch(showToast({ type: 'success', message: 'API key regenerated — copy it now, it won\u2019t be shown again' }));
+        dispatch(showToast({
+          type: 'success',
+          message: 'API key regenerated — copy it now, it won\u2019t be shown again',
+          duration: 8000,
+        }));
       }
     } catch {
       dispatch(showToast({ type: 'error', message: 'Failed to regenerate key' }));
