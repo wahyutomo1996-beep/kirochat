@@ -13,6 +13,7 @@ export interface ConversationSummary {
   title: string;
   model: string;
   provider: string;
+  workspace: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -33,8 +34,13 @@ export interface Message {
 
 export const conversationsApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
-    listConversations: build.query<{ conversations: ConversationSummary[] }, void>({
-      query: () => '/api/conversations',
+    /**
+     * List conversations. Optional workspace filter so the sidebar Recent
+     * list can show only chats from the active workspace.
+     */
+    listConversations: build.query<{ conversations: ConversationSummary[] }, string | void>({
+      query: (workspace) =>
+        workspace ? `/api/conversations?workspace=${encodeURIComponent(workspace)}` : '/api/conversations',
       providesTags: (result) =>
         result?.conversations
           ? [

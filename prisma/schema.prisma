@@ -79,12 +79,18 @@ model Conversation {
   title     String    @default("New Chat")
   model     String    @default("")
   provider  String    @default("")
+  /// Logical workspace this conversation belongs to.
+  /// One of: "general", "coding", "trading" (extensible).
+  /// Used to filter Recent in the sidebar so each workspace's history
+  /// stays separate without forcing the user to rename or tag manually.
+  workspace String    @default("general")
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   messages  Message[]
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, workspace, updatedAt])
 }
 
 model Message {

@@ -65,6 +65,17 @@ export const authApi = baseApi.injectEndpoints({
         body: data,
       }),
     }),
+
+    logout: build.mutation<{ ok: boolean }, void>({
+      query: () => ({
+        url: '/api/auth/logout',
+        method: 'POST',
+      }),
+      // After logout, every cached query becomes invalid for this user.
+      // Listing all tags would be tedious; in practice the page redirects
+      // to /login immediately so cache cleanup happens via fresh page load.
+      invalidatesTags: ['Auth'],
+    }),
   }),
 });
 
@@ -72,4 +83,5 @@ export const {
   useGetMeQuery,
   useLoginMutation,
   useRegisterMutation,
+  useLogoutMutation,
 } = authApi;

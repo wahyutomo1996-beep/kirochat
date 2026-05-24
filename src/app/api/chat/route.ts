@@ -16,6 +16,7 @@ import { PROMETHEUS_PROVIDER_ID } from '@/lib/constants';
 import { apiError, errorMessage } from '@/lib/http';
 import { resolveCombo, parseComboRef, isFallThroughError } from '@/lib/combo-dispatch';
 import { compressMessages } from '@/lib/rtk-compression';
+import { normalizeWorkspaceId } from '@/lib/workspaces';
 
 interface ChatPayload {
   conversationId?: string | null;
@@ -23,6 +24,8 @@ interface ChatPayload {
   images?: string[];
   providerId: string;
   model: string;
+  /** Workspace id ('general' | 'coding' | 'trading') for new conversations */
+  workspace?: string;
 }
 
 interface ResolvedProvider {
@@ -331,7 +334,7 @@ export async function POST(request: NextRequest) {
     userId = session.userId;
 
     const payload = (await request.json()) as ChatPayload;
-    const { conversationId, message, images = [], providerId, model } = payload;
+    const { conversationId, message, images = [], providerId, model, workspace } = payload;
     modelUsed = model;
 
     // ---- Validate ----
@@ -414,6 +417,7 @@ export async function POST(request: NextRequest) {
           title: message?.slice(0, 50) || 'Image Analysis',
           model,
           provider: trackingProviderName,
+          workspace: normalizeWorkspaceId(workspace),
         },
       });
       convId = conv.id;

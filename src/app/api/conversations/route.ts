@@ -1,18 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { normalizeWorkspaceId, WORKSPACE_IDS } from '@/lib/workspaces';
 
-export async function GET() {
+/**
+ * GET /api/conversations
+ * Optional query: ?workspace=coding (filters), default = all.
+ */
+export async function GET(request: NextRequest) {
   try {
     const session = await requireAuth();
+    const { searchParams } = new URL(request.url);
+    const workspaceParam = searchParams.get('workspace');
+
+    const where: { userId: string; workspace?: string } = { userId: session.userId };
+    if (workspaceParam && WORKSPACE_IDS.includes(workspaceParam)) {
+      where.workspace = workspaceParam;
+    }
+
     const conversations = await prisma.conversation.findMany({
-      where: { userId: session.userId },
+      where,
       orderBy: { updatedAt: 'desc' },
       select: {
         id: true,
         title: true,
         model: true,
         provider: true,
+        workspace: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -29,7 +43,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const session = await requireAuth();
-    const { title, model, provider } = await request.json();
+    const { title, model, provider, workspace } = await request.json();
 
     const conversation = await prisma.conversation.create({
       data: {
@@ -37,6 +51,7 @@ export async function POST(request: NextRequest) {
         title: title || 'New Chat',
         model: model || '',
         provider: provider || '',
+        workspace: normalizeWorkspaceId(workspace),
       },
     });
 
