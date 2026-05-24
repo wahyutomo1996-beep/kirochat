@@ -1,51 +1,61 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+/**
+ * Admin panel — list users, approve/ban/role-change, delete.
+ *
+ * Showcases combined query + mutation pattern with auto-refetch on
+ * tag invalidation:
+ *   - useListAdminUsersQuery -> table data
+ *   - useUpdateAdminUserMutation -> approve/ban/role change
+ *   - useDeleteAdminUserMutation -> hard delete
+ *   - Both mutations invalidate 'AdminUser' tag so the list refetches
+ *     itself after every action. No manual fetchUsers() call needed.
+ */
+
 import { Button } from '@/components/Button';
 import { Badge } from '@/components/Badge';
 import { LoadingState } from '@/components/LoadingState';
-
-interface User {
-  id: string;
-  email: string;
-  username: string;
-  role: string;
-  status: string;
-  createdAt: string;
-  _count: { providers: number; conversations: number };
-}
+import { useAppDispatch } from '@/lib/store/hooks';
+import { showToast } from '@/lib/store/slices/uiSlice';
+import {
+  useListAdminUsersQuery,
+  useUpdateAdminUserMutation,
+  useDeleteAdminUserMutation,
+} from '@/lib/store/api/adminUsersApi';
 
 export default function AdminPage() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
+  const dispatch = useAppDispatch();
+  const { data, isLoading } = useListAdminUsersQuery();
+  const [updateUser] = useUpdateAdminUserMutation();
+  const [deleteUser] = useDeleteAdminUserMutation();
 
-  useEffect(() => { fetchUsers(); }, []);
+  if (isLoading || !data) return <LoadingState fullScreen />;
 
-  const fetchUsers = async () => {
-    const res = await fetch('/api/admin/users');
-    if (res.ok) { const data = await res.json(); setUsers(data.users); }
-    else if (res.status === 401) window.location.href = '/login';
-    setLoading(false);
-  };
-
-  const updateUser = async (id: string, data: { status?: string; role?: string }) => {
-    await fetch(`/api/admin/users/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-    fetchUsers();
-  };
-
-  const deleteUser = async (id: string) => {
-    if (!confirm('Delete this user permanently? All their data will be lost.')) return;
-    await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
-    fetchUsers();
-  };
-
-  if (loading) return <LoadingState fullScreen />;
-
-  const pendingUsers = users.filter(u => u.status === 'pending');
+  const users = data.users;
+  const pendingUsers = users.filter((u) => u.status === 'pending');
   const statusVariants: Record<string, 'success' | 'warning' | 'danger'> = {
     approved: 'success',
     pending: 'warning',
     banned: 'danger',
+  };
+
+  const handleUpdate = async (id: string, payload: { status?: string; role?: string }) => {
+    try {
+      await updateUser({ id, ...payload }).unwrap();
+      dispatch(showToast({ type: 'success', message: 'User updated' }));
+    } catch {
+      dispatch(showToast({ type: 'error', message: 'Update failed' }));
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this user permanently? All their data will be lost.')) return;
+    try {
+      await deleteUser(id).unwrap();
+      dispatch(showToast({ type: 'success', message: 'User deleted' }));
+    } catch {
+      dispatch(showToast({ type: 'error', message: 'Delete failed' }));
+    }
   };
 
   return (
@@ -74,7 +84,9 @@ export default function AdminPage() {
           </div>
           <div className="bg-surface-1 border border-edge rounded-xl p-4">
             <p className="text-xs text-txt-muted uppercase tracking-wider font-semibold">Approved</p>
-            <p className="text-2xl font-semibold text-green-400 mt-1">{users.filter(u => u.status === 'approved').length}</p>
+            <p className="text-2xl font-semibold text-green-400 mt-1">
+              {users.filter((u) => u.status === 'approved').length}
+            </p>
           </div>
         </div>
 
@@ -93,8 +105,12 @@ export default function AdminPage() {
                     <p className="text-xs text-txt-muted">{user.email}</p>
                   </div>
                   <div className="flex gap-2">
-                    <Button onClick={() => updateUser(user.id, { status: 'approved' })} variant="primary" size="xs">Approve</Button>
-                    <Button onClick={() => updateUser(user.id, { status: 'banned' })} variant="danger" size="xs">Reject</Button>
+                    <Button onClick={() => handleUpdate(user.id, { status: 'approved' })} variant="primary" size="xs">
+                      Approve
+                    </Button>
+                    <Button onClick={() => handleUpdate(user.id, { status: 'banned' })} variant="danger" size="xs">
+                      Reject
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -130,7 +146,7 @@ export default function AdminPage() {
                     <td className="px-5 py-3">
                       <select
                         value={user.role}
-                        onChange={(e) => updateUser(user.id, { role: e.target.value })}
+                        onChange={(e) => handleUpdate(user.id, { role: e.target.value })}
                         className="bg-surface-0 border border-edge text-white text-xs rounded px-2 py-1 focus:outline-none focus:border-edge-hover"
                       >
                         <option value="user">User</option>
@@ -144,17 +160,27 @@ export default function AdminPage() {
                       {user._count.providers} providers · {user._count.conversations} chats
                     </td>
                     <td className="px-5 py-3 text-xs text-txt-muted">
-                      {new Date(user.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {new Date(user.createdAt).toLocaleDateString('id-ID', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex gap-1.5 justify-end">
                         {user.status === 'approved' && (
-                          <Button onClick={() => updateUser(user.id, { status: 'banned' })} variant="danger" size="xs">Ban</Button>
+                          <Button onClick={() => handleUpdate(user.id, { status: 'banned' })} variant="danger" size="xs">
+                            Ban
+                          </Button>
                         )}
                         {user.status === 'banned' && (
-                          <Button onClick={() => updateUser(user.id, { status: 'approved' })} variant="outline" size="xs">Unban</Button>
+                          <Button onClick={() => handleUpdate(user.id, { status: 'approved' })} variant="outline" size="xs">
+                            Unban
+                          </Button>
                         )}
-                        <Button onClick={() => deleteUser(user.id)} variant="danger" size="xs">Delete</Button>
+                        <Button onClick={() => handleDelete(user.id)} variant="danger" size="xs">
+                          Delete
+                        </Button>
                       </div>
                     </td>
                   </tr>

@@ -31,6 +31,7 @@ import './api/conversationsApi';
 import './api/dashboardApi';
 import './api/apiKeyApi';
 import './api/healthApi';
+import './api/adminUsersApi';
 
 export const makeStore = () => {
   const store = configureStore({

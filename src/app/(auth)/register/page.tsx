@@ -1,10 +1,21 @@
 'use client';
 
+/**
+ * Register page — RTK Query mutation pattern with success state.
+ *
+ * Showcases:
+ *   - useRegisterMutation tuple
+ *   - .unwrap() for try/catch flow
+ *   - Resetting form on success
+ *   - Inline success message (account pending approval, no auto-redirect)
+ */
+
 import { useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { Alert } from '@/components/Alert';
+import { useRegisterMutation } from '@/lib/store/api/authApi';
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('');
@@ -12,27 +23,22 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [loading, setLoading] = useState(false);
+
+  const [register, { isLoading }] = useRegisterMutation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
-    setLoading(true);
     try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, username, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error); return; }
-      setSuccess(data.message);
-      setEmail(''); setUsername(''); setPassword('');
-    } catch {
-      setError('Gagal terhubung ke server');
-    } finally {
-      setLoading(false);
+      const result = await register({ email, username, password }).unwrap();
+      setSuccess(result.message);
+      setEmail('');
+      setUsername('');
+      setPassword('');
+    } catch (err) {
+      const data = (err as { data?: { error?: string } })?.data;
+      setError(data?.error ?? 'Gagal terhubung ke server');
     }
   };
 
@@ -82,7 +88,7 @@ export default function RegisterPage() {
             hint="Account requires admin approval after registration"
           />
 
-          <Button type="submit" loading={loading} className="w-full mt-2">
+          <Button type="submit" loading={isLoading} className="w-full mt-2">
             Request Access
           </Button>
         </form>
