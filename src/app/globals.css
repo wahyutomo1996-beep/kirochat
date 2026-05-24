@@ -3,13 +3,84 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /*
+     * Workspace personality colors. Each workspace has:
+     *   --ws-X-h           hue (0-360) — used in hsl() for tint variants
+     *   --ws-X             solid mid-saturation color (hover, accent)
+     *   --ws-X-bright      brighter version for glows + active highlights
+     *   --ws-X-glow        rgba for box-shadow glow effects
+     *
+     * General  — Indigo. Calm neutral default.
+     * Coding   — Mint/Cyan. Technical, precise.
+     * Trading  — Amber/Gold. Hot, active, market-energy.
+     */
+    --ws-general-h: 240;
+    --ws-general: hsl(240, 70%, 65%);
+    --ws-general-bright: hsl(240, 80%, 72%);
+    --ws-general-glow: 99 102 241;        /* rgb for shadow alpha control */
+
+    --ws-coding-h: 158;
+    --ws-coding: hsl(158, 65%, 55%);
+    --ws-coding-bright: hsl(158, 75%, 62%);
+    --ws-coding-glow: 16 185 129;
+
+    --ws-trading-h: 38;
+    --ws-trading: hsl(38, 95%, 60%);
+    --ws-trading-bright: hsl(38, 100%, 67%);
+    --ws-trading-glow: 245 158 11;
+
+    /* Active workspace pointer — JS sets this on documentElement when
+     * workspace changes, so any element using var(--ws-active) inherits
+     * the tint without per-component coupling. */
+    --ws-active: var(--ws-general);
+    --ws-active-bright: var(--ws-general-bright);
+    --ws-active-glow: var(--ws-general-glow);
+  }
+
+  /*
+   * Selectors for body[data-workspace="X"] — set by chat page when user
+   * activates a workspace. Cascades --ws-active to children, lighting up
+   * borders, glows, and accents in the workspace's color.
+   */
+  body[data-workspace="general"] {
+    --ws-active: var(--ws-general);
+    --ws-active-bright: var(--ws-general-bright);
+    --ws-active-glow: var(--ws-general-glow);
+  }
+  body[data-workspace="coding"] {
+    --ws-active: var(--ws-coding);
+    --ws-active-bright: var(--ws-coding-bright);
+    --ws-active-glow: var(--ws-coding-glow);
+  }
+  body[data-workspace="trading"] {
+    --ws-active: var(--ws-trading);
+    --ws-active-bright: var(--ws-trading-bright);
+    --ws-active-glow: var(--ws-trading-glow);
+  }
+
   * {
     box-sizing: border-box;
   }
 
   html, body {
-    background: #0d0d0d;
+    /*
+     * Atmospheric mesh background — three radial gradients with workspace
+     * accent colors at very low opacity, layered over the base near-black.
+     * The fixed bg-attachment makes it stay in place while content scrolls,
+     * giving subtle depth without distraction.
+     *
+     * The center accent gradient picks up --ws-active so the room "glows"
+     * faintly with the active workspace's color.
+     */
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(var(--ws-active-glow) / 0.08), transparent 60%),
+      radial-gradient(ellipse 60% 80% at 100% 50%, rgba(99, 102, 241, 0.04), transparent 70%),
+      radial-gradient(ellipse 60% 80% at 0% 100%, rgba(16, 185, 129, 0.03), transparent 70%),
+      #0a0a0c;
+    background-attachment: fixed;
     color: #ffffff;
+    transition: background 600ms ease;  /* smooth transition when workspace switches */
   }
 
   body {
@@ -28,21 +99,21 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #4a4a4a;
+    background: rgba(255, 255, 255, 0.1);
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #5c5c5c;
+    background: rgba(var(--ws-active-glow) / 0.3);
   }
 
   ::selection {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(var(--ws-active-glow) / 0.3);
     color: #ffffff;
   }
 
-  /* Focus ring */
+  /* Focus ring uses workspace tint */
   *:focus-visible {
-    outline: 2px solid #5c5c5c;
+    outline: 2px solid rgba(var(--ws-active-glow) / 0.6);
     outline-offset: 2px;
   }
 
@@ -222,10 +293,65 @@
   .animate-pill-menu {
     animation: pillMenu 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
+  /*
+   * Spring-style entrance: scale up with a slight overshoot, then settle.
+   * Use for elements that should feel alive (buttons appearing, cards pop in).
+   */
+  .animate-spring {
+    animation: springIn 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  /*
+   * Active workspace box gets a soft glow that pulses gently.
+   * Color is workspace-tinted via --ws-active-glow CSS var.
+   */
+  .animate-active-glow {
+    animation: activeGlow 3s ease-in-out infinite;
+  }
+  /*
+   * Streaming dots — wave pattern instead of fade.
+   * Apply animation-delay 0/200ms/400ms on three siblings.
+   */
+  .animate-wave-dot {
+    animation: waveDot 1.2s infinite ease-in-out;
+  }
   .glass {
-    background: rgba(13, 13, 13, 0.85);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: rgba(13, 13, 13, 0.65);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+  }
+  /*
+   * Workspace tint utility — applies the active workspace's accent color
+   * to anything that uses border-color: var(--ws-tint-border) etc.
+   * Components opt-in by using these vars instead of hard-coded colors.
+   */
+  .ws-tint-border {
+    border-color: rgba(var(--ws-active-glow) / 0.4);
+  }
+  .ws-tint-bg {
+    background: rgba(var(--ws-active-glow) / 0.08);
+  }
+  .ws-tint-text {
+    color: var(--ws-active-bright);
+  }
+  .ws-tint-glow {
+    box-shadow:
+      0 0 0 1px rgba(var(--ws-active-glow) / 0.3),
+      0 4px 24px -4px rgba(var(--ws-active-glow) / 0.4);
+  }
+  /*
+   * Hover lift + scale — feels responsive to user input.
+   * Used on workspace boxes, action cards. Spring easing for natural motion.
+   */
+  .hover-lift {
+    transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
+                box-shadow 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px) scale(1.01);
+  }
+  .hover-lift:active {
+    transform: translateY(0) scale(0.99);
+    transition-duration: 80ms;
   }
 }
 
@@ -249,5 +375,58 @@
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
+  }
+}
+
+/*
+ * Spring entrance — slight overshoot then settles. cubic-bezier with
+ * y > 1 produces the bounce. Combined with a tiny scale jump for
+ * physicality.
+ */
+@keyframes springIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.92) translateY(8px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.02) translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/*
+ * Soft pulsing glow for active workspace box. Subtle (max 0.5 opacity)
+ * so it adds presence without distracting reading. 3s cycle is slow
+ * enough to feel ambient rather than busy.
+ */
+@keyframes activeGlow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(var(--ws-active-glow) / 0.3),
+      0 4px 20px -4px rgba(var(--ws-active-glow) / 0.25);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(var(--ws-active-glow) / 0.5),
+      0 4px 32px -2px rgba(var(--ws-active-glow) / 0.45);
+  }
+}
+
+/*
+ * Wave-style streaming dots — three dots ride a wave pattern instead
+ * of pulsing in place. Looks more alive than the old fade.
+ */
+@keyframes waveDot {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-6px);
+    opacity: 1;
   }
 }

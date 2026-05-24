@@ -122,11 +122,20 @@ export function UserPill({ username, role }: UserPillProps) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2.5 px-2.5 py-2 bg-surface-1 hover:bg-surface-2 border border-edge hover:border-edge-hover rounded-xl transition-colors group"
+        className="w-full flex items-center gap-2.5 px-2.5 py-2 bg-surface-1/60 hover:bg-surface-2/80 border border-edge hover:border-edge-hover backdrop-blur-sm rounded-xl transition-all group hover-lift"
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500/40 to-blue-500/40 border border-edge-hover flex items-center justify-center text-xs font-semibold text-white shrink-0">
+        <div
+          className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold text-white shrink-0"
+          style={{
+            // Workspace-tinted avatar — picks up var(--ws-active) which the
+            // chat page sets on body[data-workspace=X], so the avatar color
+            // shifts as the user switches workspaces.
+            background: `linear-gradient(135deg, rgba(var(--ws-active-glow) / 0.7), rgba(var(--ws-active-glow) / 0.4))`,
+            boxShadow: `0 2px 8px -2px rgba(var(--ws-active-glow) / 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2)`,
+          }}
+        >
           {initial}
         </div>
         <div className="flex-1 min-w-0 text-left">
