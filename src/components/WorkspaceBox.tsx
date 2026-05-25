@@ -118,13 +118,19 @@ export function WorkspaceBox({
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-white truncate">{workspace.name}</p>
-          <p className="text-[10px] truncate" style={{ color: isActive ? accent.bright : '#7a7a7a' }}>
-            {currentCombo ? (
-              <>{currentCombo.name}</>
-            ) : (
-              <span className="text-txt-muted">No combo · raw model</span>
-            )}
-          </p>
+          {/* Only show combo subtitle when this workspace is active.
+              Inactive workspaces just show the name - keeps the sidebar
+              quiet so the active one stands out. */}
+          {isActive && currentCombo && (
+            <p className="text-[10px] truncate" style={{ color: accent.bright }}>
+              {currentCombo.name}
+            </p>
+          )}
+          {!isActive && (
+            <p className="text-[10px] text-txt-faint truncate">
+              {workspace.description.split('.')[0]}
+            </p>
+          )}
         </div>
         <button
           type="button"

@@ -324,6 +324,14 @@
     animation: toastBounce 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
   }
   /*
+   * Bottom sheet slide-up: used for mobile/foldable side-panel
+   * (CodingPanel/TradingPanel) when activated via header toggle.
+   * 280ms ease-out feels native.
+   */
+  .animate-sheet-up {
+    animation: sheetUp 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  /*
    * Send button squash: micro tactile feedback on press. Used as
    * active: pseudo-state. Triggers when user clicks send.
    */
@@ -468,5 +476,19 @@
   100% {
     opacity: 1;
     transform: translateX(0) translateY(0) scale(1);
+  }
+}
+
+/*
+ * Bottom sheet entrance: slides up from below with smooth ease-out.
+ * No overshoot here - mobile users expect a deliberate, predictable feel.
+ * Used for CodingPanel/TradingPanel as bottom sheet on phone/foldable.
+ */
+@keyframes sheetUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
   }
 }

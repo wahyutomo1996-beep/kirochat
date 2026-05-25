@@ -6,6 +6,28 @@ module.exports = {
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
+    /*
+     * Custom breakpoints tuned for 2022-2024 phone landscape:
+     *   xs    280px  Galaxy Fold cover screen (folded)
+     *   sm    360px  Standard small phones (Pixel 6a, iPhone SE)
+     *   md    430px  Larger phones (iPhone 15 Pro Max, Galaxy S24 Ultra)
+     *   fold  600px  Foldable INNER screen unfolded (Z Fold 5: 720x880)
+     *   lg   1024px  Tablets, foldable in tablet mode, small laptops
+     *   xl   1280px  Standard laptop
+     *   2xl  1536px  Desktop
+     *
+     * Tailwind's default md=768 doesn't capture the "narrow but big" reality
+     * of tall modern phones. We override with values that match real devices.
+     */
+    screens: {
+      xs: '280px',
+      sm: '360px',
+      md: '430px',
+      fold: '600px',
+      lg: '1024px',
+      xl: '1280px',
+      '2xl': '1536px',
+    },
     extend: {
       fontFamily: {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],

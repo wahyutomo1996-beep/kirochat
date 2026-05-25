@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/Button';
@@ -9,6 +10,39 @@ import { WorkspaceBox } from '@/components/WorkspaceBox';
 import { UserPill } from '@/components/UserPill';
 import { isKiroBacked, pickVisionFallback, type ProviderLike } from '@/lib/vision';
 import { WORKSPACES, findWorkspace, normalizeWorkspaceId } from '@/lib/workspaces';
+
+/*
+ * Side panels are workspace-specific and lazy-loaded — no need to ship
+ * highlight.js (CodingPanel ~150KB) or TradingView loader (TradingPanel)
+ * into the chat bundle when the user is in General workspace. They get
+ * fetched only when the user activates that workspace.
+ *
+ * ssr:false because both panels touch browser-only APIs (TradingView
+ * window global, navigator.clipboard) — there's no value in pre-rendering
+ * them on the server.
+ */
+const CodingPanel = dynamic(
+  () => import('@/components/CodingPanel').then((m) => m.CodingPanel),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center h-full text-txt-muted text-xs">
+        Loading code panel...
+      </div>
+    ),
+  },
+);
+const TradingPanel = dynamic(
+  () => import('@/components/TradingPanel').then((m) => m.TradingPanel),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center h-full text-txt-muted text-xs">
+        Loading market view...
+      </div>
+    ),
+  },
+);
 
 interface Message {
   id: string;
@@ -91,6 +125,10 @@ export default function ChatPage() {
   const [activeWorkspace, setActiveWorkspace] = useState<string>('general');
   /** Per-workspace combo selection (persisted to localStorage) */
   const [workspaceCombos, setWorkspaceCombos] = useState<Record<string, string>>({});
+  /** Mobile sidebar drawer state - false by default on small screens */
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  /** Side panel toggle for tablet/foldable mode (between fold and lg breakpoints) */
+  const [sidePanelOpen, setSidePanelOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -232,6 +270,10 @@ export default function ChatPage() {
     setMessages([]);
     setStreamContent('');
     setRoutingNotice(null);
+    // Close mobile drawer after selection (UX: user wants to see chat)
+    setMobileSidebarOpen(false);
+    // Reset side panel for new workspace
+    setSidePanelOpen(false);
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -479,10 +521,32 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-screen overflow-hidden">
+      {/* Mobile drawer backdrop - tap to close. Hidden on lg+ where sidebar is permanent. */}
+      {mobileSidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm lg:hidden animate-fade-in"
+          onClick={() => setMobileSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Sidebar — ChatGPT-style: New chat → Workspace boxes → Recent → User pill.
           Glass effect over the atmospheric background instead of solid color
-          so the workspace accent gradient bleeds through subtly. */}
-      <aside className="w-72 transition-all duration-200 bg-surface-1/40 backdrop-blur-xl border-r border-edge/60 flex flex-col overflow-hidden shrink-0">
+          so the workspace accent gradient bleeds through subtly.
+
+          Responsive behavior:
+          - Mobile (<lg): Fixed drawer that slides in from left when open.
+          - lg+:          Permanent sidebar in flow.
+      */}
+      <aside
+        className={`
+          fixed lg:relative inset-y-0 left-0 z-40 w-72 max-w-[85vw]
+          bg-surface-1/95 lg:bg-surface-1/40 backdrop-blur-xl
+          border-r border-edge/60 flex flex-col overflow-hidden shrink-0
+          transition-transform duration-300 ease-out
+          ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        `}
+      >
         {/* New Chat (top) */}
         <div className="p-3">
           <button
@@ -570,11 +634,29 @@ export default function ChatPage() {
         </div>
       </aside>
 
-      {/* Main */}
-      <main className="flex-1 flex flex-col min-w-0">
-        {/* Header — minimal, just shows current workspace + export */}
-        <header className="h-12 border-b border-edge/60 flex items-center px-4 gap-3 shrink-0 bg-surface-0/40 backdrop-blur-xl">
-          <div className="flex items-center gap-2 min-w-0">
+      {/* Main area — splits into chat + side panel based on workspace.
+          General workspace: chat-only, full width.
+          Coding: chat | code panel (split 60/40).
+          Trading: chat | market view (split 55/45). */}
+      <div className="flex-1 flex min-w-0">
+        <main className={`flex flex-col min-w-0 ${
+          activeWorkspace === 'general' ? 'flex-1' : 'flex-[3]'
+        }`}>
+          {/* Header — minimal, just shows current workspace + export */}
+          <header className="h-12 border-b border-edge/60 flex items-center px-3 lg:px-4 gap-2 lg:gap-3 shrink-0 bg-surface-0/40 backdrop-blur-xl">
+            {/* Hamburger - only on mobile/tablet */}
+            <button
+              type="button"
+              onClick={() => setMobileSidebarOpen(true)}
+              className="lg:hidden text-txt-muted hover:text-white p-1 -ml-1 transition-colors btn-squash"
+              aria-label="Open sidebar"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+
+            <div className="flex items-center gap-2 min-w-0 flex-1">
             <span
               className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-base"
               style={{
@@ -597,83 +679,98 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {messages.length > 0 && (
-            <Button variant="ghost" size="xs" onClick={exportChat} className="ml-auto">
-              Export
-            </Button>
-          )}
-        </header>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto">
-          {messages.length === 0 && !streaming ? (
-            <div className="flex items-center justify-center h-full px-4">
-              <div className="text-center max-w-md animate-spring">
-                <div
-                  className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5 text-3xl"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(var(--ws-active-glow) / 0.2), rgba(var(--ws-active-glow) / 0.05))',
-                    border: '1px solid rgba(var(--ws-active-glow) / 0.3)',
-                    boxShadow: '0 8px 32px -8px rgba(var(--ws-active-glow) / 0.4)',
-                  }}
+            <div className="flex items-center gap-1 ml-auto">
+              {/* Side panel toggle - only show when there's a workspace panel + on tablet/foldable */}
+              {(activeWorkspace === 'coding' || activeWorkspace === 'trading') && (
+                <button
+                  type="button"
+                  onClick={() => setSidePanelOpen(!sidePanelOpen)}
+                  className="lg:hidden text-txt-muted hover:text-white p-1.5 rounded-md hover:bg-surface-2/60 transition-all btn-squash"
+                  aria-label={sidePanelOpen ? 'Close panel' : 'Open panel'}
+                  title={activeWorkspace === 'coding' ? 'Code artifacts' : 'Market view'}
                 >
-                  {activeWs?.icon}
-                </div>
-                <p className="text-white text-lg font-semibold">
-                  {activeWs?.name === 'Coding' && 'Ready to build something?'}
-                  {activeWs?.name === 'Trading' && 'What\u2019s the market saying?'}
-                  {(activeWs?.name === 'General' || !activeWs) && 'How can I help today?'}
-                </p>
-                <p className="text-txt-muted text-sm mt-1.5 leading-relaxed">
-                  {activeWs?.description ?? 'Type a message or upload an image'}
-                </p>
-
-                {/* Suggested prompts per workspace - clicking sets the input */}
-                <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {(activeWs?.name === 'Coding'
-                    ? [
-                        { icon: '\u{1F41B}', text: 'Why is my useEffect running infinitely?' },
-                        { icon: '\u26A1', text: 'Optimize this SQL query for read-heavy load' },
-                        { icon: '\u{1F9EA}', text: 'Write tests for this function' },
-                        { icon: '\u{1F50D}', text: 'Review this PR for security issues' },
-                      ]
-                    : activeWs?.name === 'Trading'
-                    ? [
-                        { icon: '\u{1F4C8}', text: 'Read this BTC chart — what\u2019s the setup?' },
-                        { icon: '\u{1F50D}', text: 'Explain the BTC dominance index' },
-                        { icon: '\u26A0\uFE0F', text: 'Risk-manage a $10k portfolio for Q2' },
-                        { icon: '\u{1F4F0}', text: 'Summarize today\u2019s key macro news' },
-                      ]
-                    : [
-                        { icon: '\u270D\uFE0F', text: 'Help me draft an email to my team' },
-                        { icon: '\u{1F4DA}', text: 'Explain quantum computing simply' },
-                        { icon: '\u{1F4A1}', text: 'Brainstorm 5 names for a new product' },
-                        { icon: '\u{1F30D}', text: 'Plan a 7-day trip to Bali' },
-                      ]).map((p, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => {
-                        setInput(p.text);
-                        textareaRef.current?.focus();
-                      }}
-                      className="text-left px-3 py-2.5 rounded-xl bg-surface-1/40 hover:bg-surface-2/60 border border-edge/60 hover:border-edge-hover backdrop-blur-sm hover-lift text-xs text-txt-secondary hover:text-white flex items-start gap-2 group/sug"
-                      style={{ animationDelay: `${i * 60}ms` }}
-                    >
-                      <span className="shrink-0 text-base group-hover/sug:scale-110 transition-transform">{p.icon}</span>
-                      <span className="leading-snug">{p.text}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {resolvedProviderId === 'combo' && (
-                  <p className="text-[11px] text-txt-faint mt-5 font-mono">
-                    Using combo <span className="ws-tint-text">{resolvedModel}</span>
-                  </p>
-                )}
-              </div>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                </button>
+              )}
+              {messages.length > 0 && (
+                <Button variant="ghost" size="xs" onClick={exportChat}>
+                  Export
+                </Button>
+              )}
             </div>
-          ) : (
+          </header>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto">
+            {messages.length === 0 && !streaming ? (
+              <div className="flex items-center justify-center h-full px-3 fold:px-4 py-6">
+                <div className="text-center max-w-md w-full animate-spring">
+                  <div
+                    className="w-14 h-14 fold:w-16 fold:h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 fold:mb-5 text-2xl fold:text-3xl"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(var(--ws-active-glow) / 0.2), rgba(var(--ws-active-glow) / 0.05))',
+                      border: '1px solid rgba(var(--ws-active-glow) / 0.3)',
+                      boxShadow: '0 8px 32px -8px rgba(var(--ws-active-glow) / 0.4)',
+                    }}
+                  >
+                    {activeWs?.icon}
+                  </div>
+                  <p className="text-white text-base fold:text-lg font-semibold leading-tight">
+                    {activeWs?.name === 'Coding' && 'Ready to build something?'}
+                    {activeWs?.name === 'Trading' && 'What\u2019s the market saying?'}
+                    {(activeWs?.name === 'General' || !activeWs) && 'How can I help today?'}
+                  </p>
+                  <p className="text-txt-muted text-xs fold:text-sm mt-1.5 leading-relaxed px-2">
+                    {activeWs?.description ?? 'Type a message or upload an image'}
+                  </p>
+
+                  {/* Suggested prompts per workspace - clicking sets the input */}
+                  <div className="mt-5 fold:mt-6 grid grid-cols-1 fold:grid-cols-2 gap-2">
+                    {(activeWs?.name === 'Coding'
+                      ? [
+                          { icon: '\u{1F41B}', text: 'Why is my useEffect running infinitely?' },
+                          { icon: '\u26A1', text: 'Optimize this SQL query for read-heavy load' },
+                          { icon: '\u{1F9EA}', text: 'Write tests for this function' },
+                          { icon: '\u{1F50D}', text: 'Review this PR for security issues' },
+                        ]
+                      : activeWs?.name === 'Trading'
+                      ? [
+                          { icon: '\u{1F4C8}', text: 'Read this BTC chart \u2014 what\u2019s the setup?' },
+                          { icon: '\u{1F50D}', text: 'Explain the BTC dominance index' },
+                          { icon: '\u26A0\uFE0F', text: 'Risk-manage a $10k portfolio for Q2' },
+                          { icon: '\u{1F4F0}', text: 'Summarize today\u2019s key macro news' },
+                        ]
+                      : [
+                          { icon: '\u270D\uFE0F', text: 'Help me draft an email to my team' },
+                          { icon: '\u{1F4DA}', text: 'Explain quantum computing simply' },
+                          { icon: '\u{1F4A1}', text: 'Brainstorm 5 names for a new product' },
+                          { icon: '\u{1F30D}', text: 'Plan a 7-day trip to Bali' },
+                        ]).map((p, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          setInput(p.text);
+                          textareaRef.current?.focus();
+                        }}
+                        className="text-left px-3 py-2.5 rounded-xl bg-surface-1/40 hover:bg-surface-2/60 border border-edge/40 hover:border-edge-hover backdrop-blur-sm hover-lift text-xs text-txt-secondary hover:text-white flex items-start gap-2 group/sug"
+                      >
+                        <span className="shrink-0 text-base group-hover/sug:scale-110 transition-transform">{p.icon}</span>
+                        <span className="leading-snug">{p.text}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {resolvedProviderId === 'combo' && (
+                    <p className="text-[11px] text-txt-faint mt-5 font-mono">
+                      Using combo <span className="ws-tint-text">{resolvedModel}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : (
             <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
               {messages.map((msg) => (
                 <div key={msg.id} className="animate-fade-in">
@@ -825,14 +922,79 @@ export default function ChatPage() {
                 </svg>
               </button>
             </div>
-            <p className="text-[11px] text-txt-muted text-center mt-2">
+            <p className="hidden fold:block text-[11px] text-txt-muted text-center mt-2">
               <kbd className="px-1.5 py-0.5 bg-surface-2 border border-edge rounded text-[10px]">Enter</kbd> send ·
               <kbd className="px-1.5 py-0.5 bg-surface-2 border border-edge rounded text-[10px]">Shift+Enter</kbd> new line ·
               <kbd className="px-1.5 py-0.5 bg-surface-2 border border-edge rounded text-[10px]">Ctrl+V</kbd> paste image
             </p>
           </div>
         </div>
-      </main>
+        </main>
+
+        {/*
+         * Workspace-specific side panel.
+         *
+         * Responsive behavior:
+         *   lg+ (≥1024px): Permanent right column, fills available space.
+         *   Below lg:      Bottom sheet that slides up from bottom when
+         *                  user taps the panel button in header. Backdrop
+         *                  closes it. Only renders when sidePanelOpen.
+         *
+         * The same component renders in both modes - just wrapped differently.
+         */}
+        {(activeWorkspace === 'coding' || activeWorkspace === 'trading') && (
+          <>
+            {/* Desktop: permanent right column */}
+            <div className="hidden lg:flex flex-[2] min-w-[320px] flex-col">
+              {activeWorkspace === 'coding' ? (
+                <CodingPanel messages={messages} />
+              ) : (
+                <TradingPanel messages={messages} />
+              )}
+            </div>
+
+            {/* Tablet/foldable/phone: bottom sheet that slides up */}
+            {sidePanelOpen && (
+              <>
+                {/* Backdrop */}
+                <div
+                  className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm lg:hidden animate-fade-in"
+                  onClick={() => setSidePanelOpen(false)}
+                  aria-hidden="true"
+                />
+                {/* Sheet - takes 80% viewport height, slides from bottom */}
+                <div
+                  className="fixed inset-x-0 bottom-0 z-40 lg:hidden bg-surface-1/95 backdrop-blur-xl border-t border-edge rounded-t-2xl shadow-2xl flex flex-col animate-sheet-up"
+                  style={{ height: '85vh', maxHeight: '85vh' }}
+                >
+                  {/* Drag handle */}
+                  <div className="flex justify-center py-2 shrink-0">
+                    <div className="w-10 h-1 rounded-full bg-edge-hover/50"></div>
+                  </div>
+                  {/* Close button top right */}
+                  <button
+                    type="button"
+                    onClick={() => setSidePanelOpen(false)}
+                    className="absolute top-3 right-3 text-txt-muted hover:text-white p-1 rounded transition-colors"
+                    aria-label="Close panel"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                  <div className="flex-1 min-h-0">
+                    {activeWorkspace === 'coding' ? (
+                      <CodingPanel messages={messages} />
+                    ) : (
+                      <TradingPanel messages={messages} />
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
