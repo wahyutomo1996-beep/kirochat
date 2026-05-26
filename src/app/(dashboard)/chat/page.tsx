@@ -565,8 +565,8 @@ export default function ChatPage() {
       <aside
         className={`
           fixed lg:relative inset-y-0 left-0 z-40 w-72 max-w-[85vw]
-          bg-surface-1/95 lg:bg-surface-1/40 backdrop-blur-xl
-          border-r border-edge/60 flex flex-col overflow-hidden shrink-0
+          bg-surface-1
+          border-r border-hairline flex flex-col overflow-hidden shrink-0
           transition-transform duration-300 ease-out
           ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
@@ -575,7 +575,7 @@ export default function ChatPage() {
         <div className="p-3">
           <button
             onClick={newChat}
-            className="w-full py-2 px-3 border border-edge bg-surface-1/60 backdrop-blur-sm rounded-lg text-white text-sm font-medium hover:bg-surface-2/80 hover:border-edge-hover hover-lift flex items-center gap-2"
+            className="w-full py-2 px-3 border border-hairline bg-surface-1 rounded-lg text-ink text-sm font-medium hover:bg-surface-2 hover:border-hairline-strong hover-lift flex items-center gap-2"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -630,8 +630,8 @@ export default function ChatPage() {
                   }
                   className={`group flex items-center gap-2 px-2.5 py-1.5 rounded-md cursor-pointer transition-all ${
                     currentConv === conv.id
-                      ? 'text-white pl-2'
-                      : 'text-txt-secondary hover:text-white hover:bg-surface-2/60'
+                      ? 'text-ink pl-2'
+                      : 'text-ink-muted hover:text-ink hover:bg-surface-2'
                   }`}
                 >
                   <span className="text-[13px] truncate flex-1">{conv.title}</span>
@@ -653,7 +653,7 @@ export default function ChatPage() {
         </div>
 
         {/* User pill (bottom, animated menu) */}
-        <div className="p-3 border-t border-edge/60">
+        <div className="p-3 border-t border-hairline">
           {user && <UserPill username={user.username} role={user.role} />}
         </div>
       </aside>
@@ -667,7 +667,7 @@ export default function ChatPage() {
           activeWorkspace === 'general' ? 'flex-1' : 'flex-[3]'
         }`}>
           {/* Header — minimal, just shows current workspace + export */}
-          <header className="h-12 border-b border-edge/60 flex items-center px-3 lg:px-4 gap-2 lg:gap-3 shrink-0 bg-surface-0/40 backdrop-blur-xl">
+          <header className="h-12 border-b border-hairline flex items-center px-3 lg:px-4 gap-2 lg:gap-3 shrink-0 bg-canvas">
             {/* Hamburger - only on mobile/tablet */}
             <button
               type="button"
@@ -709,7 +709,7 @@ export default function ChatPage() {
                 <button
                   type="button"
                   onClick={() => setSidePanelOpen(!sidePanelOpen)}
-                  className="lg:hidden text-txt-muted hover:text-white p-1.5 rounded-md hover:bg-surface-2/60 transition-all btn-squash"
+                  className="lg:hidden text-ink-subtle hover:text-ink p-1.5 rounded-md hover:bg-surface-2 transition-all btn-squash"
                   aria-label={sidePanelOpen ? 'Close panel' : 'Open panel'}
                   title={activeWorkspace === 'coding' ? 'Code artifacts' : 'Market view'}
                 >
@@ -779,7 +779,7 @@ export default function ChatPage() {
                           setInput(p.text);
                           textareaRef.current?.focus();
                         }}
-                        className="text-left px-3 py-2.5 rounded-xl bg-surface-1/40 hover:bg-surface-2/60 border border-edge/40 hover:border-edge-hover backdrop-blur-sm hover-lift text-xs text-txt-secondary hover:text-white flex items-start gap-2 group/sug"
+                        className="text-left px-3 py-2.5 rounded-xl bg-surface-1 hover:bg-surface-2 border border-hairline hover:border-hairline-strong hover-lift text-xs text-ink-muted hover:text-ink flex items-start gap-2 group/sug transition-all"
                       >
                         <span className="shrink-0 text-base group-hover/sug:scale-110 transition-transform">{p.icon}</span>
                         <span className="leading-snug">{p.text}</span>
@@ -1025,7 +1025,7 @@ export default function ChatPage() {
                 />
                 {/* Sheet - takes 80% viewport height, slides from bottom */}
                 <div
-                  className="fixed inset-x-0 bottom-0 z-40 lg:hidden bg-surface-1/95 backdrop-blur-xl border-t border-edge rounded-t-2xl shadow-2xl flex flex-col animate-sheet-up"
+                  className="fixed inset-x-0 bottom-0 z-40 lg:hidden bg-surface-1 border-t border-hairline-strong rounded-t-2xl shadow-2xl flex flex-col animate-sheet-up"
                   style={{ height: '85vh', maxHeight: '85vh' }}
                 >
                   {/* Drag handle */}

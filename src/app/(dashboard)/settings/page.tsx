@@ -312,13 +312,14 @@ export default function SettingsPage() {
     : 'No key';
 
   return (
-    <div className="min-h-screen bg-surface-0">
-      <div className="max-w-3xl mx-auto px-6 py-8">
+    <div className="min-h-screen bg-canvas">
+      <div className="max-w-3xl mx-auto px-6 py-10">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8 animate-fade-in">
+        <div className="page-header animate-fade-in">
           <div>
-            <h1 className="text-2xl font-semibold text-white">Settings</h1>
-            <p className="text-txt-muted text-sm mt-1">
+            <p className="typo-eyebrow mb-2">Configuration</p>
+            <h1 className="typo-headline">Settings</h1>
+            <p className="typo-body-sm mt-2">
               Manage your AI providers, Kiro accounts, and API access
             </p>
           </div>
@@ -749,7 +750,7 @@ curl ${baseUrl}/chat/completions \\
                 <button
                   type="button"
                   onClick={() => setForm({ ...form, name: '', type: 'api_key', baseUrl: '' })}
-                  className="px-3 py-1.5 text-xs font-medium border border-edge bg-surface-2/40 text-txt-secondary rounded-md hover:text-white hover:border-edge-hover transition-all"
+                  className="px-3 py-1.5 text-xs font-medium border border-hairline bg-surface-2 text-ink-muted rounded-md hover:text-ink hover:border-hairline-strong transition-all"
                   title="Manual entry — use the Base URL field below"
                 >
                   + Custom
@@ -777,7 +778,7 @@ curl ${baseUrl}/chat/completions \\
                             })
                           }
                           title={preset.note ? `${preset.note}\n${preset.baseUrl}` : preset.baseUrl}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium border border-edge text-txt-secondary rounded-md hover:text-white hover:border-edge-hover hover:bg-surface-2/60 transition-all"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium border border-hairline text-ink-muted rounded-md hover:text-ink hover:border-hairline-strong hover:bg-surface-2 transition-all"
                         >
                           <span>{preset.icon}</span>
                           <span>{preset.name}</span>
