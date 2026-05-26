@@ -24,6 +24,7 @@ import { Badge } from '@/components/Badge';
 import { LoadingState } from '@/components/LoadingState';
 import { TokenDetector } from '@/components/TokenDetector';
 import { ComboPanel } from '@/components/ComboPanel';
+import { KiroUsageTracker } from '@/components/KiroUsageTracker';
 import { useAppDispatch } from '@/lib/store/hooks';
 import { showToast } from '@/lib/store/slices/uiSlice';
 import {
@@ -395,26 +396,12 @@ curl ${baseUrl}/chat/completions \\
             </Button>
           </div>
 
-          {kiroSummary && kiroSummary.totalAccounts > 0 && (
-            <div className="px-5 py-3 border-b border-edge bg-surface-2 grid grid-cols-3 gap-4">
-              <div>
-                <p className="text-[10px] text-txt-muted uppercase tracking-wider mb-0.5">Tokens today</p>
-                <p className="text-base font-semibold text-white tabular-nums">
-                  {formatTokens(kiroSummary.totalTokensToday)}
-                </p>
-              </div>
-              <div>
-                <p className="text-[10px] text-txt-muted uppercase tracking-wider mb-0.5">Last 7 days</p>
-                <p className="text-base font-semibold text-white tabular-nums">
-                  {formatTokens(kiroSummary.totalTokensWeek)}
-                </p>
-              </div>
-              <div>
-                <p className="text-[10px] text-txt-muted uppercase tracking-wider mb-0.5">All-time</p>
-                <p className="text-base font-semibold text-white tabular-nums">
-                  {formatTokens(kiroSummary.totalTokensAllTime)}
-                </p>
-              </div>
+          {/* Live quota tracker — auto-refresh every 30s + manual refresh.
+              Pool-wide summary only here; per-account breakdown below in
+              the account list keeps the UI from duplicating identical info. */}
+          {kiroAccounts.length > 0 && (
+            <div className="px-5 py-3 border-b border-edge">
+              <KiroUsageTracker showPerAccount={false} />
             </div>
           )}
 

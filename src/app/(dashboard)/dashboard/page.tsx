@@ -17,6 +17,7 @@ import { useState } from 'react';
 import { Button } from '@/components/Button';
 import { Badge } from '@/components/Badge';
 import { LoadingState } from '@/components/LoadingState';
+import { KiroUsageTracker } from '@/components/KiroUsageTracker';
 import {
   useGetDashboardQuery,
   type DashboardRange,
@@ -99,6 +100,12 @@ export default function DashboardPage() {
             sub={`${data.summary.totalConversations} conversations`}
             icon="⚡"
           />
+        </div>
+
+        {/* Kiro pool live quota - manual refresh + auto-refresh 30s.
+            Compact mode hides per-account 4-cell breakdown for space. */}
+        <div className="mb-6 animate-slide-up">
+          <KiroUsageTracker showSummary={true} showPerAccount={true} compact={true} />
         </div>
 
         {/* Timeline Chart */}
