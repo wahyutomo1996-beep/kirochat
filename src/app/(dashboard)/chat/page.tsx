@@ -6,7 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/Button';
 import { LoadingState } from '@/components/LoadingState';
-import { WorkspaceBox } from '@/components/WorkspaceBox';
+import { WorkspaceBox, type WorkspaceSelection, type WorkspaceModelLike } from '@/components/WorkspaceBox';
 import { UserPill } from '@/components/UserPill';
 import { isKiroBacked, pickVisionFallback, type ProviderLike } from '@/lib/vision';
 import { WORKSPACES, findWorkspace, normalizeWorkspaceId } from '@/lib/workspaces';
@@ -84,24 +84,45 @@ interface ChatCombo {
   steps: Array<{ providerId: string; model: string; label?: string }>;
 }
 
-/** localStorage key for per-workspace combo override */
-const WORKSPACE_COMBO_KEY = 'prometheus.workspace.combo';
+/**
+ * localStorage key for per-workspace selection (combo or model).
+ * Bumped to v2 since the schema changed from `Record<string,string>` to
+ * `Record<string, WorkspaceSelection>` — old v1 data is silently dropped
+ * via the safety check in loadWorkspaceSelections.
+ */
+const WORKSPACE_SELECTION_KEY = 'prometheus.workspace.selection.v2';
 
-/** Read persisted combo selections from localStorage */
-function loadWorkspaceCombos(): Record<string, string> {
+/** Read persisted per-workspace selections from localStorage */
+function loadWorkspaceSelections(): Record<string, WorkspaceSelection> {
   if (typeof window === 'undefined') return {};
   try {
-    const raw = localStorage.getItem(WORKSPACE_COMBO_KEY);
-    return raw ? JSON.parse(raw) : {};
+    const raw = localStorage.getItem(WORKSPACE_SELECTION_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      const out: Record<string, WorkspaceSelection> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        if (
+          v && typeof v === 'object' &&
+          'mode' in v && 'value' in v &&
+          (v.mode === 'combo' || v.mode === 'model') &&
+          typeof v.value === 'string'
+        ) {
+          out[k] = v as WorkspaceSelection;
+        }
+      }
+      return out;
+    }
+    return {};
   } catch {
     return {};
   }
 }
 
-function saveWorkspaceCombos(map: Record<string, string>): void {
+function saveWorkspaceSelections(map: Record<string, WorkspaceSelection>): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(WORKSPACE_COMBO_KEY, JSON.stringify(map));
+    localStorage.setItem(WORKSPACE_SELECTION_KEY, JSON.stringify(map));
   } catch {
     /* localStorage full or disabled - silently ignore */
   }
@@ -135,8 +156,14 @@ export default function ChatPage() {
 
   /** Active workspace - drives Recent filter, default combo, system prompt */
   const [activeWorkspace, setActiveWorkspace] = useState<string>('general');
-  /** Per-workspace combo selection (persisted to localStorage) */
-  const [workspaceCombos, setWorkspaceCombos] = useState<Record<string, string>>({});
+  /**
+   * Per-workspace selection (combo OR specific model). Persisted to
+   * localStorage v2 schema. Replaced the v1 `workspaceCombos` state which
+   * had no way to express "I want a specific model, not a combo".
+   */
+  const [workspaceSelections, setWorkspaceSelections] = useState<Record<string, WorkspaceSelection>>({});
+  /** All available models (used by the Model picker in WorkspaceBox) */
+  const [models, setModels] = useState<WorkspaceModelLike[]>([]);
   /** Mobile sidebar drawer state - false by default on small screens */
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   /** Side panel toggle for tablet/foldable mode (between fold and lg breakpoints) */
@@ -148,10 +175,10 @@ export default function ChatPage() {
 
   // Initial bootstrap
   useEffect(() => {
-    Promise.all([fetchUser(), fetchProviders(), fetchConversations(), fetchCombos()])
+    Promise.all([fetchUser(), fetchProviders(), fetchConversations(), fetchCombos(), fetchModels()])
       .finally(() => setInitialLoad(false));
-    // Restore per-workspace combo overrides from localStorage
-    setWorkspaceCombos(loadWorkspaceCombos());
+    // Restore per-workspace selection overrides from localStorage v2
+    setWorkspaceSelections(loadWorkspaceSelections());
   }, []);
 
   useEffect(() => { if (currentConv) fetchMessages(currentConv); }, [currentConv]);
@@ -214,6 +241,26 @@ export default function ChatPage() {
     }
   };
 
+  /**
+   * Fetch full model catalog. Used by the Model picker in WorkspaceBox so
+   * users can switch to any specific model (e.g. claude-opus-4.7,
+   * deepseek-3.2, qwen3-coder) without having to first create a combo.
+   * This fixes the "locked to one provider" UX bug.
+   */
+  const fetchModels = async () => {
+    try {
+      const res = await fetch('/api/models');
+      if (!res.ok) return;
+      const data = await res.json();
+      setModels(
+        (data.models as Array<{ id: string; displayName: string; tier: string }>)
+          .map((m) => ({ id: m.id, displayName: m.displayName, tier: m.tier })),
+      );
+    } catch {
+      /* models optional — selector falls back to workspace.fallbackModel */
+    }
+  };
+
   const fetchMessages = async (convId: string) => {
     const res = await fetch(`/api/conversations/${convId}`);
     if (res.ok) { const data = await res.json(); setMessages(data.conversation.messages); }
@@ -223,10 +270,11 @@ export default function ChatPage() {
    * Resolve the (providerId, model) to send to /api/chat for a workspace.
    *
    * Priority:
-   *   1. User-overridden combo for this workspace -> use it
-   *   2. Default combo of the workspace, IF user has it instantiated
-   *   3. First combo matching the workspace category (any other slug)
-   *   4. Built-in Prometheus pool with workspace.fallbackModel
+   *   1. User selection mode 'model' -> raw model via Prometheus pool
+   *   2. User selection mode 'combo' -> resolved combo (chained fallback)
+   *   3. Workspace's default combo if user has it instantiated
+   *   4. First combo matching the workspace category
+   *   5. Built-in Prometheus pool with workspace.fallbackModel
    *
    * Returns { providerId, model } that the chat backend understands.
    */
@@ -237,25 +285,30 @@ export default function ChatPage() {
         return { providerId: '__prometheus__', model: 'kiro/claude-sonnet-4.6' };
       }
 
-      // 1. User override for this workspace
-      const overrideSlug = workspaceCombos[workspaceId];
-      if (overrideSlug) {
-        const found = combos.find((c) => c.slug === overrideSlug);
-        if (found) return { providerId: 'combo', model: found.slug };
+      // 1+2. User explicit override (combo or model)
+      const sel = workspaceSelections[workspaceId];
+      if (sel) {
+        if (sel.mode === 'model' && sel.value) {
+          return { providerId: '__prometheus__', model: sel.value };
+        }
+        if (sel.mode === 'combo' && sel.value) {
+          const found = combos.find((c) => c.slug === sel.value);
+          if (found) return { providerId: 'combo', model: found.slug };
+        }
       }
 
-      // 2. Workspace's default combo if user instantiated it
+      // 3. Workspace's default combo if user instantiated it
       const defaultCombo = combos.find((c) => c.slug === ws.defaultComboSlug);
       if (defaultCombo) return { providerId: 'combo', model: defaultCombo.slug };
 
-      // 3. Any combo matching this category
+      // 4. Any combo matching this category
       const matchingCategory = combos.find((c) => c.category === workspaceId);
       if (matchingCategory) return { providerId: 'combo', model: matchingCategory.slug };
 
-      // 4. Raw built-in fallback model
+      // 5. Raw built-in fallback model
       return { providerId: '__prometheus__', model: ws.fallbackModel };
     },
-    [combos, workspaceCombos],
+    [combos, workspaceSelections],
   );
 
   /** Combos available for a given workspace (matched by category) */
@@ -266,12 +319,31 @@ export default function ChatPage() {
     [combos],
   );
 
-  /** User picks a different combo for a workspace - persist to localStorage */
-  const handleWorkspaceComboChange = (workspaceId: string, slug: string) => {
-    const next = { ...workspaceCombos, [workspaceId]: slug };
-    if (!slug) delete next[workspaceId];
-    setWorkspaceCombos(next);
-    saveWorkspaceCombos(next);
+  /**
+   * Compute the effective selection to display in WorkspaceBox.
+   * Falls back through the same priority as resolveWorkspaceModel so the
+   * UI always shows something useful, even when the user hasn't picked
+   * anything explicitly yet.
+   */
+  const effectiveSelection = useCallback(
+    (workspaceId: string): WorkspaceSelection => {
+      const sel = workspaceSelections[workspaceId];
+      if (sel) return sel;
+      const ws = findWorkspace(workspaceId);
+      if (!ws) return { mode: 'model', value: 'kiro/claude-sonnet-4.6' };
+      // Show the default combo if it exists, else fall back to fallbackModel
+      const hasDefaultCombo = combos.some((c) => c.slug === ws.defaultComboSlug);
+      if (hasDefaultCombo) return { mode: 'combo', value: ws.defaultComboSlug };
+      return { mode: 'model', value: ws.fallbackModel };
+    },
+    [combos, workspaceSelections],
+  );
+
+  /** User picks a different combo OR model for a workspace - persist to localStorage */
+  const handleWorkspaceSelectionChange = (workspaceId: string, selection: WorkspaceSelection) => {
+    const next = { ...workspaceSelections, [workspaceId]: selection };
+    setWorkspaceSelections(next);
+    saveWorkspaceSelections(next);
   };
 
   /** Activate a workspace + start a fresh chat in it */
@@ -591,13 +663,11 @@ export default function ChatPage() {
               key={ws.id}
               workspace={ws}
               combos={combosForWorkspace(ws.id)}
-              selectedComboSlug={
-                workspaceCombos[ws.id] ??
-                (combos.find((c) => c.slug === ws.defaultComboSlug) ? ws.defaultComboSlug : '')
-              }
+              models={models}
+              selection={effectiveSelection(ws.id)}
               isActive={activeWorkspace === ws.id}
               onActivate={() => activateWorkspace(ws.id)}
-              onComboChange={(slug) => handleWorkspaceComboChange(ws.id, slug)}
+              onSelectionChange={(sel) => handleWorkspaceSelectionChange(ws.id, sel)}
             />
           ))}
         </div>
