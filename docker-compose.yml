@@ -5,7 +5,7 @@ services:
     build: .
     container_name: prometheus
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       - NODE_ENV=production
       - DATABASE_URL=file:/app/data/prometheus.db

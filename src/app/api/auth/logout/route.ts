@@ -16,14 +16,14 @@ export async function POST() {
   // Both cookies cleared by setting maxAge=0
   response.cookies.set('token', '', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.AUTH_COOKIE_SECURE === 'true',
     sameSite: 'lax',
     maxAge: 0,
     path: '/',
   });
   response.cookies.set(CSRF_COOKIE_NAME, '', {
     httpOnly: false,
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.AUTH_COOKIE_SECURE === 'true',
     sameSite: 'lax',
     maxAge: 0,
     path: '/',

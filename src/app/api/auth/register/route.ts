@@ -58,12 +58,12 @@ export async function POST(request: NextRequest) {
         username,
         password: hashedPassword,
         role: 'user',
-        status: 'pending',
+        status: 'approved',
       },
     });
 
     return NextResponse.json({
-      message: 'Registrasi berhasil. Akun menunggu approval dari admin.',
+      message: 'Registrasi berhasil. Silakan login.',
     });
   } catch (error) {
     console.error('Register error:', error);

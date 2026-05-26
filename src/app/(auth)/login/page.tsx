@@ -1,16 +1,11 @@
 'use client';
 
 /**
- * Login page — showcases RTK Query mutation pattern.
+ * Login page.
  *
- * Pattern: useMutation hook returns a tuple [trigger, state]. Call the
- * trigger with payload, await `.unwrap()` to throw on error (so try/catch
- * works naturally). The state object exposes isLoading / error /
- * isSuccess that we can use directly in JSX without manual useState.
- *
- * After success: invalidate 'Auth' tag (handled by the endpoint definition
- * in authApi) so any component subscribed to useGetMeQuery refetches the
- * fresh user state. Then router.push to /chat.
+ * Accepts either email or username — the backend resolves both via an
+ * OR clause on the same lookup. We keep one input field labeled
+ * "Email or username" so the user does not have to choose.
  */
 
 import { useState } from 'react';
@@ -22,24 +17,18 @@ import { Alert } from '@/components/Alert';
 import { useLoginMutation } from '@/lib/store/api/authApi';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const router = useRouter();
 
-  // Mutation hook returns a stable trigger function + a state object.
-  // `isLoading` reflects the in-flight request without manual useState.
   const [login, { isLoading }] = useLoginMutation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     try {
-      // .unwrap() converts RTK Query's success/error envelope into a
-      // throw-on-error promise so we can use plain try/catch.
-      await login({ email, password }).unwrap();
-      // The 'Auth' tag invalidation in authApi means any useGetMeQuery
-      // subscriber will refetch the fresh session automatically.
+      await login({ identifier, password }).unwrap();
       router.push('/chat');
     } catch (err) {
       const data = (err as { data?: { error?: string } })?.data;
@@ -48,12 +37,18 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface-0 px-4">
+    <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm animate-fade-in">
         <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-surface-1 border border-edge mb-4">
+          <div
+            className="inline-flex items-center justify-center w-12 h-12 rounded-xl mb-4"
+            style={{
+              background: 'linear-gradient(135deg, rgba(var(--ws-active-glow) / 0.7), rgba(var(--ws-active-glow) / 0.3))',
+              boxShadow: '0 4px 16px -4px rgba(var(--ws-active-glow) / 0.5)',
+            }}
+          >
             <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
           </div>
           <h1 className="text-2xl font-semibold text-white tracking-tight">Prometheus</h1>
@@ -64,11 +59,12 @@ export default function LoginPage() {
           {error && <Alert type="error">{error}</Alert>}
 
           <Input
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
+            label="Email or username"
+            type="text"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            placeholder="you@example.com or username"
+            autoComplete="username"
             required
           />
 
@@ -78,6 +74,7 @@ export default function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
+            autoComplete="current-password"
             required
           />
 

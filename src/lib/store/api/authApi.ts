@@ -19,7 +19,8 @@ export interface MeResponse {
 }
 
 export interface LoginRequest {
-  email: string;
+  /** Either email or username - backend resolves with OR clause */
+  identifier: string;
   password: string;
 }
 

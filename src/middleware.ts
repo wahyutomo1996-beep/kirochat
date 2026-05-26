@@ -105,7 +105,7 @@ export async function middleware(request: NextRequest) {
     response.cookies.set(CSRF_COOKIE_NAME, csrfToken, {
       // NOT httpOnly - frontend reads this to send back as header
       httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.AUTH_COOKIE_SECURE === 'true',
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 7,
       path: '/',
