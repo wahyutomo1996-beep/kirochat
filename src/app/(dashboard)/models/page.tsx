@@ -124,46 +124,46 @@ export default function ModelsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-txt-muted">
+      <div className="min-h-screen flex items-center justify-center text-ink-subtle">
         Loading models...
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen px-4 py-6 fold:px-6 fold:py-8">
+    <div className="min-h-screen px-4 py-6 fold:px-6 fold:py-10">
       <div className="max-w-5xl mx-auto">
         {/* Hero */}
-        <div className="mb-6 fold:mb-8">
+        <div className="mb-8">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div className="min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-                <span className="text-[11px] uppercase tracking-wider font-semibold text-emerald-400">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-1.5 h-1.5 bg-success rounded-full animate-pulse" />
+                <span className="typo-eyebrow text-success">
                   {models.length} models available
                 </span>
               </div>
-              <h1 className="text-2xl fold:text-3xl font-bold text-white tracking-tight mb-1">
+              <h1 className="typo-headline mb-2">
                 AI Models
               </h1>
-              <p className="text-sm text-txt-muted leading-relaxed max-w-2xl">
-                Daftar model yang bisa lo pakai. Klik <kbd className="px-1 bg-surface-2/60 border border-edge/40 rounded text-[10px]">Copy ID</kbd> untuk
+              <p className="typo-body-sm leading-relaxed max-w-2xl">
+                Daftar model yang bisa lo pakai. Klik <kbd className="px-1 bg-surface-2 border border-hairline rounded text-[10px] text-ink">Copy ID</kbd> untuk
                 ambil model identifier — paste ke OpenCode, Cursor, atau client OpenAI-compatible
-                lainnya. Tombol <kbd className="px-1 bg-surface-2/60 border border-edge/40 rounded text-[10px]">Test</kbd> mengirim
+                lainnya. Tombol <kbd className="px-1 bg-surface-2 border border-hairline rounded text-[10px] text-ink">Test</kbd> mengirim
                 ping ke model untuk verify koneksi + cek latency.
               </p>
             </div>
             <Link
               href="/chat"
-              className="text-sm text-txt-secondary hover:text-white px-3 py-1.5 rounded-lg border border-edge/60 hover:border-edge-hover transition-all"
+              className="text-sm text-ink-muted hover:text-ink px-3.5 py-2 rounded-lg border border-hairline hover:border-hairline-strong transition-all whitespace-nowrap"
             >
               ← Back to chat
             </Link>
           </div>
 
           {/* Quick connection info */}
-          <div className="mt-5 bg-surface-1/40 backdrop-blur-sm border border-edge/60 rounded-xl p-3">
-            <p className="text-[11px] uppercase tracking-wider font-semibold text-txt-muted mb-2">
+          <div className="mt-5 bg-surface-1 border border-hairline rounded-xl p-4">
+            <p className="typo-eyebrow mb-3">
               Connection details
             </p>
             <div className="grid fold:grid-cols-2 gap-2 text-xs">
@@ -183,9 +183,9 @@ export default function ModelsPage() {
         </div>
 
         {/* Filters */}
-        <div className="bg-surface-1/40 backdrop-blur-sm border border-edge/60 rounded-xl p-3 mb-4 flex flex-wrap items-center gap-3">
+        <div className="bg-surface-1 border border-hairline rounded-xl p-3 mb-4 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1 flex-1 min-w-[200px]">
-            <svg className="w-3.5 h-3.5 text-txt-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3.5 h-3.5 text-ink-subtle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <input
@@ -193,13 +193,13 @@ export default function ModelsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by id or name..."
-              className="flex-1 bg-transparent text-sm text-white placeholder:text-txt-ghost focus:outline-none"
+              className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink-subtle focus:outline-none"
             />
             {search && (
               <button
                 type="button"
                 onClick={() => setSearch('')}
-                className="text-txt-muted hover:text-white text-xs"
+                className="text-ink-subtle hover:text-ink text-xs"
                 aria-label="Clear search"
               >
                 ×

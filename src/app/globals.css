@@ -200,6 +200,60 @@
     @apply inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium bg-surface-2 text-ink-muted rounded-full border border-hairline;
   }
 
+  /*
+   * Typography utilities — direct port of Linear's type scale.
+   * Use these instead of ad-hoc text-2xl/font-semibold combos so that the
+   * negative letter-spacing stays consistent across the app.
+   */
+  .typo-display-md {
+    @apply text-[40px] font-semibold leading-[1.15] tracking-display-md text-ink;
+  }
+  .typo-headline {
+    @apply text-[28px] font-semibold leading-[1.2] tracking-headline text-ink;
+  }
+  .typo-card-title {
+    @apply text-[22px] font-medium leading-[1.25] tracking-card-title text-ink;
+  }
+  .typo-subhead {
+    @apply text-[20px] font-normal leading-[1.4] tracking-subhead text-ink-muted;
+  }
+  .typo-body-lg {
+    @apply text-[18px] font-normal leading-[1.5] tracking-body-lg text-ink;
+  }
+  .typo-body {
+    @apply text-base font-normal leading-[1.5] text-ink;
+  }
+  .typo-body-sm {
+    @apply text-sm font-normal leading-[1.5] text-ink-muted;
+  }
+  .typo-caption {
+    @apply text-xs font-normal leading-[1.4] text-ink-subtle;
+  }
+  /* Eyebrow: positive tracking +0.4px is Linear's signature taxonomy mark */
+  .typo-eyebrow {
+    @apply text-[13px] font-medium leading-[1.3] tracking-eyebrow uppercase text-ink-subtle;
+  }
+
+  /*
+   * Page header — standard 2-column header used at the top of most
+   * dashboard pages (Dashboard, Models, Quota Tracker, Admin).
+   * Title left, actions right. Mobile: stacks vertically.
+   */
+  .page-header {
+    @apply flex flex-col fold:flex-row fold:items-center fold:justify-between gap-3 mb-8;
+  }
+
+  /*
+   * Section card — Linear's default lifted surface. surface-1 background,
+   * 1px hairline border, 24px padding, 12px corner radius.
+   */
+  .section-card {
+    @apply bg-surface-1 border border-hairline rounded-xl p-6;
+  }
+  .section-card-sm {
+    @apply bg-surface-1 border border-hairline rounded-xl p-5;
+  }
+
   /* Prose / Markdown — keep unchanged structurally; just use Linear tokens */
   .prose {
     color: var(--ink);

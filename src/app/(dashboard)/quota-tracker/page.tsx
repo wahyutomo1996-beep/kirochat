@@ -215,15 +215,15 @@ export default function QuotaTrackerPage() {
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-                <span className="text-[11px] uppercase tracking-wider font-semibold text-emerald-400">
+                <span className="w-1.5 h-1.5 bg-success rounded-full animate-pulse" />
+                <span className="typo-eyebrow text-success">
                   Live monitor
                 </span>
               </div>
-              <h1 className="text-2xl fold:text-3xl font-bold text-white tracking-tight mb-1">
+              <h1 className="typo-headline mb-2">
                 Quota Tracker
               </h1>
-              <p className="text-sm text-txt-muted leading-relaxed max-w-2xl">
+              <p className="typo-body-sm leading-relaxed max-w-2xl">
                 Pantau dan kelola batas kuota API per akun Kiro. Set daily limit per akun
                 (1000, 2000, atau berapa pun), lihat sisa request real-time, dan tau
                 kapan kuotanya reset.
@@ -231,7 +231,7 @@ export default function QuotaTrackerPage() {
             </div>
             <Link
               href="/chat"
-              className="text-sm text-txt-secondary hover:text-white px-3 py-1.5 rounded-lg border border-edge/60 hover:border-edge-hover transition-all"
+              className="text-sm text-ink-muted hover:text-ink px-3.5 py-2 rounded-lg border border-hairline hover:border-hairline-strong transition-all whitespace-nowrap"
             >
               ← Back to chat
             </Link>
