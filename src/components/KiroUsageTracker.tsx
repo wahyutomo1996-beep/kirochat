@@ -9,7 +9,9 @@
  *   - "Updated Xs ago" live counter ticking every second
  *   - Pool-wide summary (active/exhausted accounts, tokens today/7d/all-time)
  *   - Per-account: today / 7d / total / failed + status badge + last error
- *   - Quota progress bar per account (Kiro free tier ~5M token/day soft cap)
+ *   - Per-account daily request limit + REMAINING countdown
+ *     (e.g. "1840 / 2000 left today" with color-coded progress bar)
+ *   - Inline edit: click the limit number to set 1000/2000/etc per account
  *
  * Reuses RTK Query so it dedupes requests when multiple instances mount.
  * The component is self-contained: drop into any page, it handles state.
@@ -18,14 +20,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   useGetKiroUsageQuery,
+  useSetKiroDailyLimitMutation,
   type KiroAccountStats,
   type KiroSummary,
 } from '@/lib/store/api/kiroAccountsApi';
 
 const AUTO_REFRESH_KEY = 'prometheus.kiro.autoRefresh';
 const REFRESH_MS = 30_000;
-/** Soft daily cap reference for the % bar - Kiro free tier ballpark */
-const DAILY_QUOTA_REFERENCE = 5_000_000;
 
 interface Props {
   /** Show pool-wide summary section. Default: true */
@@ -86,8 +87,12 @@ function FreshnessIndicator({ since }: { since: number | null }) {
 }
 
 /**
- * One row per account with progress bar showing today's quota usage
- * relative to a soft reference cap. Color shifts amber/red as it approaches.
+ * One row per account showing:
+ *   - status indicator + email
+ *   - REQUEST quota: "X / Y left today" with progress bar
+ *     (or token total when no limit set)
+ *   - 4-cell breakdown (today/7d/total/in-out) unless compact mode
+ *   - Inline-editable dailyLimit: click the limit number to change it
  */
 function AccountRow({
   stats,
@@ -102,6 +107,10 @@ function AccountRow({
   refreshTokenPreview?: string;
   compact: boolean;
 }) {
+  const [setDailyLimit, { isLoading: savingLimit }] = useSetKiroDailyLimitMutation();
+  const [editingLimit, setEditingLimit] = useState(false);
+  const [draftLimit, setDraftLimit] = useState('');
+
   if (!stats) {
     return (
       <div className="px-3 py-2 text-xs text-txt-faint">
@@ -110,13 +119,46 @@ function AccountRow({
     );
   }
 
-  const todayUsagePct = Math.min(100, (stats.todayTokens / DAILY_QUOTA_REFERENCE) * 100);
+  // Quota math — prefer dailyLimit if user set one, else fall back to
+  // showing token usage with an arbitrary 5M reference (just for the bar
+  // color heuristic when no explicit limit exists).
+  const hasLimit = stats.dailyLimit !== null && stats.dailyLimit > 0;
+  const usagePct = hasLimit
+    ? (stats.dailyUsagePct ?? 0) * 100
+    : Math.min(100, (stats.todayTokens / 5_000_000) * 100);
   const barColor =
-    todayUsagePct >= 85
+    usagePct >= 85
       ? 'rgb(248, 113, 113)' // red
-      : todayUsagePct >= 60
+      : usagePct >= 60
         ? 'rgb(251, 191, 36)' // amber
         : 'rgb(52, 211, 153)'; // emerald
+
+  const handleSaveLimit = async () => {
+    const trimmed = draftLimit.trim();
+    let value: number | null;
+    if (trimmed === '' || trimmed === '0') {
+      value = null;
+    } else {
+      const parsed = parseInt(trimmed, 10);
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1_000_000) {
+        // Invalid — just close edit, dont save
+        setEditingLimit(false);
+        return;
+      }
+      value = parsed;
+    }
+    try {
+      await setDailyLimit({ id: stats.id, dailyLimit: value }).unwrap();
+    } catch {
+      /* error — no toast here, user can retry */
+    }
+    setEditingLimit(false);
+  };
+
+  const handleStartEdit = () => {
+    setDraftLimit(stats.dailyLimit !== null ? String(stats.dailyLimit) : '');
+    setEditingLimit(true);
+  };
 
   return (
     <div className="px-3 py-3 hover:bg-surface-2/40 transition-colors">
@@ -142,26 +184,89 @@ function AccountRow({
           )}
         </div>
         <div className="text-right shrink-0">
-          <p className="text-xs font-semibold text-white tabular-nums">
-            {formatTokens(stats.todayTokens)}
-          </p>
-          <p className="text-[10px] text-txt-faint tabular-nums">
-            {stats.todayRequests} req today
-          </p>
+          {hasLimit ? (
+            <>
+              <p className="text-xs font-semibold text-white tabular-nums">
+                <span className={stats.dailyRemaining === 0 ? 'text-red-300' : ''}>
+                  {(stats.dailyRemaining ?? 0).toLocaleString('en-US')}
+                </span>
+                <span className="text-txt-faint"> / {stats.dailyLimit?.toLocaleString('en-US')}</span>
+              </p>
+              <p className="text-[10px] text-txt-faint">
+                requests left today
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-semibold text-white tabular-nums">
+                {stats.todayRequests.toLocaleString('en-US')}
+              </p>
+              <p className="text-[10px] text-txt-faint">requests today</p>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Quota progress bar — relative to soft daily reference */}
+      {/* Quota progress bar — full when hasLimit, else heuristic from tokens */}
       <div className="ml-3.5 mr-1 mb-2">
         <div className="h-1 rounded-full bg-surface-3/60 overflow-hidden">
           <div
             className="h-full rounded-full transition-all duration-500"
-            style={{ width: `${todayUsagePct}%`, backgroundColor: barColor }}
+            style={{ width: `${usagePct}%`, backgroundColor: barColor }}
           />
         </div>
       </div>
 
-      {/* Compact: hide the 4-cell breakdown, just show numbers inline */}
+      {/* Daily limit editor row - inline below progress bar */}
+      <div className="ml-3.5 mb-2 flex items-center gap-2 text-[10px]">
+        <span className="text-txt-muted uppercase tracking-wider">Daily limit:</span>
+        {editingLimit ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSaveLimit();
+            }}
+            className="flex items-center gap-1"
+          >
+            <input
+              type="number"
+              min="0"
+              max="1000000"
+              autoFocus
+              value={draftLimit}
+              onChange={(e) => setDraftLimit(e.target.value)}
+              onBlur={handleSaveLimit}
+              placeholder="unlimited"
+              className="w-24 px-1.5 py-0.5 bg-surface-0/80 border border-emerald-500/40 rounded text-white font-mono tabular-nums focus:outline-none focus:border-emerald-500"
+            />
+            <button
+              type="submit"
+              disabled={savingLimit}
+              className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-200 border border-emerald-500/40 hover:bg-emerald-500/30 disabled:opacity-50"
+            >
+              {savingLimit ? '…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditingLimit(false)}
+              className="px-1.5 py-0.5 rounded text-txt-muted hover:text-white"
+            >
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={handleStartEdit}
+            className="font-mono tabular-nums text-white hover:text-emerald-300 transition-colors hover:underline underline-offset-2"
+            title="Click to edit"
+          >
+            {stats.dailyLimit !== null ? stats.dailyLimit.toLocaleString('en-US') + ' req/day' : 'unlimited'}
+          </button>
+        )}
+      </div>
+
+      {/* Compact: hide the 4-cell breakdown */}
       {!compact && (
         <div className="ml-3.5 grid grid-cols-4 gap-2 text-[11px]">
           <Stat label="Today" value={formatTokens(stats.todayTokens)} sub={`${stats.todayRequests} req`} />

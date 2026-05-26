@@ -35,6 +35,18 @@ interface AccountStats {
   weekRequests: number;
   weekTokens: number;
 
+  /**
+   * Per-account daily request limit (null = unlimited).
+   * UI uses this to show "X / Y left today" + warn at 80% headroom.
+   * NOT enforced server-side as a hard block — exhaust still relies on
+   * actual Kiro 429/403 responses.
+   */
+  dailyLimit: number | null;
+  /** Computed: dailyLimit - todayRequests, or null if no limit set. */
+  dailyRemaining: number | null;
+  /** Computed: 0..1 fraction of dailyLimit consumed today. null if no limit. */
+  dailyUsagePct: number | null;
+
   /** Last error/exhaust info for surfacing in UI */
   lastError: string | null;
   lastErrorAt: string | null;
@@ -102,6 +114,13 @@ export async function GET() {
     const accountStats: AccountStats[] = accounts.map(a => {
       const today = todayMap.get(a.id);
       const week = weekMap.get(a.id);
+      const todayReq = today?._count.id ?? 0;
+      const dailyLimit = a.dailyLimit ?? null;
+      // Derive remaining + percent here so UI doesnt have to redo arithmetic
+      const dailyRemaining = dailyLimit !== null ? Math.max(0, dailyLimit - todayReq) : null;
+      const dailyUsagePct = dailyLimit !== null && dailyLimit > 0
+        ? Math.min(1, todayReq / dailyLimit)
+        : null;
       return {
         id: a.id,
         email: a.email,
@@ -113,10 +132,13 @@ export async function GET() {
         totalPromptTokens: a.totalPromptTokens,
         totalCompletionTokens: a.totalCompletionTokens,
         failedRequests: a.failedRequests,
-        todayRequests: today?._count.id ?? 0,
+        todayRequests: todayReq,
         todayTokens: today?._sum.totalTokens ?? 0,
         weekRequests: week?._count.id ?? 0,
         weekTokens: week?._sum.totalTokens ?? 0,
+        dailyLimit,
+        dailyRemaining,
+        dailyUsagePct,
         lastError: a.lastError,
         lastErrorAt: a.lastErrorAt?.toISOString() ?? null,
         exhaustedAt: a.exhaustedAt?.toISOString() ?? null,

@@ -61,6 +61,13 @@ model KiroAccount {
   totalTokens           Int       @default(0)
   totalRequests         Int       @default(0)
   failedRequests        Int       @default(0)
+  /// Optional per-account daily request limit. NULL means unlimited
+  /// (free tier — uses Kiros server-side rate limits as the only ceiling).
+  /// When set, the UI shows "X / Y requests left today" and warns at 80%.
+  /// We dont enforce this server-side as a hard block; its an
+  /// observability + planning tool. Marking exhausted still happens via
+  /// real Kiro rate-limit responses.
+  dailyLimit            Int?
   lastUsed              DateTime?
   lastError             String?
   lastErrorAt           DateTime?

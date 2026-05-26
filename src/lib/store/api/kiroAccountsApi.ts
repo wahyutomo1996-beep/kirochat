@@ -40,6 +40,12 @@ export interface KiroAccountStats {
   todayTokens: number;
   weekRequests: number;
   weekTokens: number;
+  /** Per-account daily request limit (null = unlimited) */
+  dailyLimit: number | null;
+  /** dailyLimit - todayRequests (null when no limit). 0 = depleted */
+  dailyRemaining: number | null;
+  /** 0..1 fraction consumed today, null when no limit */
+  dailyUsagePct: number | null;
   lastError: string | null;
   lastErrorAt: string | null;
   exhaustedAt: string | null;
@@ -132,6 +138,27 @@ export const kiroAccountsApi = baseApi.injectEndpoints({
         'KiroUsage',
       ],
     }),
+
+    /**
+     * Set per-account daily request limit. Pass null/0 to clear (unlimited).
+     * Used by the quota tracker UI so users can configure how many requests
+     * each Kiro account can serve per day.
+     */
+    setKiroDailyLimit: build.mutation<
+      { id: string; status: string; email: string | null; dailyLimit: number | null },
+      { id: string; dailyLimit: number | null }
+    >({
+      query: ({ id, dailyLimit }) => ({
+        url: `/api/kiro-accounts/${id}`,
+        method: 'PATCH',
+        body: { dailyLimit },
+      }),
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: 'KiroAccount', id },
+        { type: 'KiroAccount', id: 'LIST' },
+        'KiroUsage',
+      ],
+    }),
   }),
 });
 
@@ -141,4 +168,5 @@ export const {
   useAddKiroAccountMutation,
   useDeleteKiroAccountMutation,
   useReactivateKiroAccountMutation,
+  useSetKiroDailyLimitMutation,
 } = kiroAccountsApi;
