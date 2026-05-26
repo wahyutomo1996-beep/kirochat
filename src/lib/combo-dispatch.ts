@@ -22,14 +22,19 @@ export interface ResolvedCombo {
 /**
  * Strip the optional "combo:" prefix used in chat dropdowns to disambiguate
  * combos from raw model IDs. Returns the bare slug.
+ *
+ * Slug spec — must match what the combo create API accepts:
+ *   ^[a-z0-9]+(-[a-z0-9]+)*$
+ *
+ * Single-word slugs ARE valid (e.g. "coding"). Earlier this regex required
+ * at least one hyphen which silently broke any single-word combo at chat
+ * time even though they were creatable in Settings — fixed here.
  */
 export function parseComboRef(ref: string): string | null {
   if (!ref) return null;
-  if (ref.startsWith('combo:')) return ref.slice(6);
-  // Accept bare slug pattern as well so users can save "coding-premium"
-  // directly without prefix.
-  if (/^[a-z0-9]+(-[a-z0-9]+)+$/.test(ref)) {
-    return ref;
+  const candidate = ref.startsWith('combo:') ? ref.slice(6) : ref;
+  if (/^[a-z0-9]+(-[a-z0-9]+)*$/.test(candidate)) {
+    return candidate;
   }
   return null;
 }

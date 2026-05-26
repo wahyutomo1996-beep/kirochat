@@ -355,14 +355,18 @@ export async function POST(request: NextRequest) {
       const slug = parseComboRef(model);
       if (!slug) {
         return NextResponse.json(
-          { error: 'Invalid combo slug. Expected slug like "coding-premium".' },
+          {
+            error: `Invalid combo slug "${model}". Slugs must be lowercase letters/digits/hyphens (e.g. "coding-premium" or "coding").`,
+          },
           { status: 400 },
         );
       }
       const combo = await resolveCombo(userId, slug);
       if (!combo) {
         return NextResponse.json(
-          { error: `Combo "${slug}" not found or has no steps. Create one in Settings.` },
+          {
+            error: `Combo "${slug}" not found or inactive. Recreate it in Settings or pick a different one.`,
+          },
           { status: 404 },
         );
       }

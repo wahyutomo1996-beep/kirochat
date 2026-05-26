@@ -11,18 +11,28 @@ describe('parseComboRef', () => {
     expect(parseComboRef('combo:trading-realtime')).toBe('trading-realtime');
   });
 
-  it('accepts bare slug pattern', () => {
+  it('accepts bare slug pattern with hyphens', () => {
     expect(parseComboRef('coding-fast')).toBe('coding-fast');
     expect(parseComboRef('my-custom-combo-1')).toBe('my-custom-combo-1');
+  });
+
+  it('accepts single-word slugs (no hyphen required)', () => {
+    // Combo create API allows single-word slugs (^[a-z0-9]+(-[a-z0-9]+)*$),
+    // so the chat-side parser must too. Earlier mismatch silently rejected
+    // any single-word combo at chat time.
+    expect(parseComboRef('coding')).toBe('coding');
+    expect(parseComboRef('mystack')).toBe('mystack');
+    expect(parseComboRef('combo:coding')).toBe('coding');
   });
 
   it('rejects invalid input', () => {
     expect(parseComboRef('')).toBeNull();
     expect(parseComboRef('Not-A-Slug')).toBeNull();  // uppercase
     expect(parseComboRef('no-uppercase BUT this')).toBeNull();
-    expect(parseComboRef('singleword')).toBeNull();  // requires hyphen
     expect(parseComboRef('with_underscore')).toBeNull();
-    expect(parseComboRef('combo:')).toBe('');  // strips prefix, returns empty
+    expect(parseComboRef('combo:')).toBeNull();  // empty after prefix is invalid
+    expect(parseComboRef('-leading-hyphen')).toBeNull();
+    expect(parseComboRef('trailing-hyphen-')).toBeNull();
   });
 });
 
