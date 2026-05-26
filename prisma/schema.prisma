@@ -68,6 +68,14 @@ model KiroAccount {
   /// observability + planning tool. Marking exhausted still happens via
   /// real Kiro rate-limit responses.
   dailyLimit            Int?
+  /// When the current quota period ends and counter resets.
+  /// Null = no scheduled reset (auto-derived as next UTC midnight when
+  /// first request of period happens, depending on quotaCycle).
+  /// Used by Quota Tracker page to display "Resets in 5h 22m".
+  quotaResetAt          DateTime?
+  /// Reset cycle: 'daily' (default) | 'weekly' | 'monthly' | 'custom'.
+  /// Affects how we auto-advance quotaResetAt at rollover.
+  quotaCycle            String    @default("daily")
   lastUsed              DateTime?
   lastError             String?
   lastErrorAt           DateTime?

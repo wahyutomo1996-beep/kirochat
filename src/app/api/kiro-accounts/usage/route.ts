@@ -37,20 +37,70 @@ interface AccountStats {
 
   /**
    * Per-account daily request limit (null = unlimited).
-   * UI uses this to show "X / Y left today" + warn at 80% headroom.
-   * NOT enforced server-side as a hard block — exhaust still relies on
-   * actual Kiro 429/403 responses.
    */
   dailyLimit: number | null;
   /** Computed: dailyLimit - todayRequests, or null if no limit set. */
   dailyRemaining: number | null;
   /** Computed: 0..1 fraction of dailyLimit consumed today. null if no limit. */
   dailyUsagePct: number | null;
+  /** When current quota period ends (next reset). ISO string or null. */
+  quotaResetAt: string | null;
+  /** Quota cycle: 'daily' | 'weekly' | 'monthly' | 'custom' */
+  quotaCycle: string;
+  /** Computed: ms until quotaResetAt. Negative when overdue. null when not set. */
+  quotaResetInMs: number | null;
 
   /** Last error/exhaust info for surfacing in UI */
   lastError: string | null;
   lastErrorAt: string | null;
   exhaustedAt: string | null;
+}
+
+/**
+ * Compute the next reset time for a given cycle, anchored on UTC.
+ * If the stored quotaResetAt is still in the future, use it. Otherwise
+ * roll forward to the next period start.
+ *
+ * - daily   -> next UTC midnight
+ * - weekly  -> next UTC monday 00:00
+ * - monthly -> first UTC midnight of next month
+ * - custom  -> trust the stored value as-is, dont auto-roll
+ */
+function computeNextReset(stored: Date | null, cycle: string, now: Date): Date {
+  if (stored && stored.getTime() > now.getTime()) {
+    return stored;
+  }
+  if (cycle === 'weekly') {
+    const next = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      0, 0, 0, 0,
+    ));
+    // 1 = Monday in UTC; advance to next Monday
+    const daysToMonday = ((1 - next.getUTCDay() + 7) % 7) || 7;
+    next.setUTCDate(next.getUTCDate() + daysToMonday);
+    return next;
+  }
+  if (cycle === 'monthly') {
+    const next = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth() + 1,
+      1, 0, 0, 0, 0,
+    ));
+    return next;
+  }
+  if (cycle === 'custom' && stored) {
+    return stored;
+  }
+  // daily (default): next UTC midnight
+  const next = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+    0, 0, 0, 0,
+  ));
+  return next;
 }
 
 export async function GET() {
@@ -121,6 +171,8 @@ export async function GET() {
       const dailyUsagePct = dailyLimit !== null && dailyLimit > 0
         ? Math.min(1, todayReq / dailyLimit)
         : null;
+      const cycle = a.quotaCycle || 'daily';
+      const nextReset = computeNextReset(a.quotaResetAt, cycle, now);
       return {
         id: a.id,
         email: a.email,
@@ -139,6 +191,9 @@ export async function GET() {
         dailyLimit,
         dailyRemaining,
         dailyUsagePct,
+        quotaResetAt: nextReset.toISOString(),
+        quotaCycle: cycle,
+        quotaResetInMs: nextReset.getTime() - now.getTime(),
         lastError: a.lastError,
         lastErrorAt: a.lastErrorAt?.toISOString() ?? null,
         exhaustedAt: a.exhaustedAt?.toISOString() ?? null,

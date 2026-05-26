@@ -91,6 +91,16 @@ export function UserPill({ username, role }: UserPillProps) {
               </svg>
               Settings
             </Link>
+            <Link
+              href="/quota-tracker"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2.5 px-3 py-2 text-sm text-white hover:bg-surface-2 rounded-lg transition-colors"
+            >
+              <svg className="w-4 h-4 text-txt-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Quota Tracker
+            </Link>
             {role === 'admin' && (
               <Link
                 href="/admin"

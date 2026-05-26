@@ -122,6 +122,7 @@ export const config = {
     '/settings/:path*',
     '/admin/:path*',
     '/dashboard/:path*',
+    '/quota-tracker/:path*',
     '/api/((?!auth/login|auth/register|health).*)',
   ],
 };

@@ -46,6 +46,12 @@ export interface KiroAccountStats {
   dailyRemaining: number | null;
   /** 0..1 fraction consumed today, null when no limit */
   dailyUsagePct: number | null;
+  /** ISO timestamp when current quota period ends. */
+  quotaResetAt: string | null;
+  /** 'daily' | 'weekly' | 'monthly' | 'custom' */
+  quotaCycle: string;
+  /** ms until quotaResetAt. UI uses for live "Resets in 5h 22m" */
+  quotaResetInMs: number | null;
   lastError: string | null;
   lastErrorAt: string | null;
   exhaustedAt: string | null;
