@@ -232,8 +232,8 @@ export function ComboPanel({ providers }: Props) {
                 onClick={() => setCategoryFilter(c.value)}
                 className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all ${
                   categoryFilter === c.value
-                    ? 'bg-white text-black'
-                    : 'text-txt-muted hover:text-white border border-edge hover:border-edge-hover'
+                    ? 'bg-surface-2 text-ink border border-hairline-strong'
+                    : 'text-ink-subtle hover:text-ink border border-hairline hover:border-hairline-strong'
                 }`}
               >
                 {c.label}

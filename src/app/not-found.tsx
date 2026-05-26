@@ -9,7 +9,7 @@ export default function NotFound() {
         <p className="text-txt-muted text-sm mb-6">The page you&apos;re looking for doesn&apos;t exist</p>
         <Link
           href="/chat"
-          className="inline-block px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+          className="inline-block px-3.5 py-2 bg-accent hover:bg-accent-hover text-white text-sm font-medium rounded-lg transition-colors"
         >
           Back to Chat
         </Link>

@@ -60,7 +60,7 @@ export default function DashboardPage() {
                   key={r.value}
                   onClick={() => setRange(r.value)}
                   className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
-                    range === r.value ? 'bg-white text-black' : 'text-txt-muted hover:text-white'
+                    range === r.value ? 'bg-surface-2 text-ink border border-hairline-strong' : 'text-ink-subtle hover:text-ink'
                   }`}
                 >
                   {r.label}

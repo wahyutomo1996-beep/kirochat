@@ -481,8 +481,8 @@ function FilterPill({
       onClick={onClick}
       className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
         active
-          ? 'bg-white text-black'
-          : 'bg-surface-2/40 text-txt-secondary border border-edge/40 hover:text-white hover:border-edge-hover'
+          ? 'bg-surface-2 text-ink border border-hairline-strong'
+          : 'bg-surface-1/40 text-ink-subtle border border-hairline/40 hover:text-ink hover:border-hairline-strong'
       }`}
     >
       {children}

@@ -37,7 +37,7 @@ export default function Home() {
           </Link>
           <Link
             href="/register"
-            className="text-sm bg-white text-black font-medium px-4 py-1.5 rounded-lg hover:bg-gray-200 transition-colors"
+            className="text-sm bg-accent hover:bg-accent-hover text-white font-medium px-3.5 py-1.5 rounded-lg transition-colors"
           >
             Get Started
           </Link>
@@ -66,7 +66,7 @@ export default function Home() {
           <div className="flex items-center justify-center gap-3 mb-16">
             <Link
               href="/register"
-              className="inline-flex items-center gap-2 bg-white text-black font-medium px-6 py-3 rounded-xl hover:bg-gray-200 hover-lift text-sm"
+              className="inline-flex items-center gap-2 bg-accent hover:bg-accent-hover text-white font-medium px-6 py-3 rounded-xl hover-lift text-sm shadow-accent transition-all"
             >
               Create Account
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
