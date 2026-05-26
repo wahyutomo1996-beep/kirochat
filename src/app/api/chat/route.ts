@@ -16,7 +16,11 @@ import { PROMETHEUS_PROVIDER_ID } from '@/lib/constants';
 import { apiError, errorMessage } from '@/lib/http';
 import { resolveCombo, parseComboRef, isFallThroughError } from '@/lib/combo-dispatch';
 import { compressMessages } from '@/lib/rtk-compression';
-import { normalizeWorkspaceId } from '@/lib/workspaces';
+import {
+  normalizeWorkspaceId,
+  resolveWorkspaceSettings,
+  parseUserWorkspaceSettings,
+} from '@/lib/workspaces';
 
 interface ChatPayload {
   conversationId?: string | null;
@@ -176,27 +180,111 @@ interface DbMessage {
   images: string;
 }
 
-function buildApiMessages(dbMessages: DbMessage[], targetSupportsImages: boolean): ChatMessage[] {
-  return dbMessages.map((msg): ChatMessage => {
+interface BridgeNotice {
+  /** Provider that ran the vision call (e.g. "Gemini") */
+  providerName: string;
+  /** Total ms spent across all bridge calls in this request */
+  totalLatencyMs: number;
+  /** How many images were processed via the bridge */
+  imageCount: number;
+  /** Number of images served from cache */
+  fromCacheCount: number;
+  /** Soft warning when no vision provider exists or call failed */
+  warning?: string;
+}
+
+/**
+ * Convert DB messages into the API shape (string or content-array).
+ *
+ * Three modes:
+ *   - target supports images: pass content blocks through verbatim
+ *   - target doesnt support images + bridge ENABLED: call vision-bridge
+ *     for each image, inline the description, return text content only
+ *   - target doesnt support images + bridge DISABLED: append a note
+ *     "[Image attached but backend doesnt support it]"
+ *
+ * Returns the rebuilt messages plus a notice describing what happened
+ * (if any bridging occurred), so the chat route can surface it via SSE.
+ */
+async function buildApiMessages(
+  dbMessages: DbMessage[],
+  targetSupportsImages: boolean,
+  bridgeEnabled: boolean,
+  userId: string,
+  workspace: string,
+): Promise<{ messages: ChatMessage[]; bridgeNotice: BridgeNotice | null }> {
+  // Pull bridge lazily so we never import it when no images are around
+  let bridgeImage: typeof import('@/lib/vision-bridge').bridgeImage | null = null;
+  let formatBridgedDescription:
+    | typeof import('@/lib/vision-bridge').formatBridgedDescription
+    | null = null;
+
+  let totalLatencyMs = 0;
+  let imageCount = 0;
+  let fromCacheCount = 0;
+  let providerName = '';
+  let warning: string | undefined;
+
+  const out: ChatMessage[] = [];
+
+  for (const msg of dbMessages) {
     const msgImages = parseJsonArray<string>(msg.images);
 
     if (msgImages.length === 0) {
-      return { role: msg.role as ChatMessage['role'], content: msg.content };
+      out.push({ role: msg.role as ChatMessage['role'], content: msg.content });
+      continue;
     }
 
-    if (!targetSupportsImages) {
-      const note =
-        `\n\n[Note: user attached ${msgImages.length} image${msgImages.length > 1 ? 's' : ''} ` +
-        `but the current backend doesn't support image input. ` +
-        `Please describe the image in text or switch to a vision-capable provider.]`;
-      return { role: msg.role as ChatMessage['role'], content: (msg.content || '') + note };
+    // Native vision-capable target: pass through as content blocks.
+    if (targetSupportsImages) {
+      const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+      if (msg.content) content.push({ type: 'text', text: msg.content });
+      for (const img of msgImages) content.push({ type: 'image_url', image_url: { url: img } });
+      out.push({ role: msg.role as ChatMessage['role'], content });
+      continue;
     }
 
-    const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
-    if (msg.content) content.push({ type: 'text', text: msg.content });
-    for (const img of msgImages) content.push({ type: 'image_url', image_url: { url: img } });
-    return { role: msg.role as ChatMessage['role'], content };
-  });
+    // Target is text-only AND bridge enabled -> describe each image
+    if (bridgeEnabled) {
+      if (!bridgeImage) {
+        const mod = await import('@/lib/vision-bridge');
+        bridgeImage = mod.bridgeImage;
+        formatBridgedDescription = mod.formatBridgedDescription;
+      }
+      const descriptions: string[] = [];
+      for (let i = 0; i < msgImages.length; i++) {
+        const result = await bridgeImage(userId, msgImages[i], workspace);
+        descriptions.push(formatBridgedDescription!(result, i));
+        imageCount++;
+        if ('error' in result) {
+          warning = result.error;
+        } else {
+          totalLatencyMs += result.latencyMs;
+          if (result.fromCache) fromCacheCount++;
+          if (!providerName) providerName = result.providerName;
+        }
+      }
+      // Combine: original user text + bridged descriptions, all as one text msg
+      const combined = [msg.content, ...descriptions].filter(Boolean).join('\n\n');
+      out.push({ role: msg.role as ChatMessage['role'], content: combined });
+      continue;
+    }
+
+    // Bridge disabled fallback: append a note so the model knows images
+    // were attached but werent forwarded.
+    const note =
+      `\n\n[Note: user attached ${msgImages.length} image${msgImages.length > 1 ? 's' : ''} ` +
+      `but the current backend doesnt support image input. Please describe the image ` +
+      `in text or enable image bridging in Settings.]`;
+    out.push({ role: msg.role as ChatMessage['role'], content: (msg.content || '') + note });
+  }
+
+  const bridgeNotice: BridgeNotice | null =
+    imageCount > 0 || warning
+      ? { providerName, totalLatencyMs, imageCount, fromCacheCount, warning }
+      : null;
+
+  return { messages: out, bridgeNotice };
 }
 
 function parseJsonArray<T>(json: string | null | undefined): T[] {
@@ -448,7 +536,23 @@ export async function POST(request: NextRequest) {
     // will reroute internally if a step doesn't support images.
     const firstProvider = comboSteps ? comboSteps[0].provider : decision!.provider;
     const targetSupportsImages = !isKiroBacked(firstProvider.row, firstProvider.isBuiltin);
-    const rawApiMessages = buildApiMessages(dbMessages, targetSupportsImages);
+
+    // Resolve user's per-workspace settings (incl. bridgeImages toggle)
+    const userRow = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { workspaceSettings: true },
+    });
+    const userSettings = parseUserWorkspaceSettings(userRow?.workspaceSettings);
+    const wsSettings = resolveWorkspaceSettings(normalizeWorkspaceId(workspace), userSettings);
+
+    // Async because bridge may need network calls
+    const { messages: rawApiMessages, bridgeNotice } = await buildApiMessages(
+      dbMessages,
+      targetSupportsImages,
+      wsSettings.bridgeImages,
+      userId,
+      normalizeWorkspaceId(workspace),
+    );
 
     // ---- RTK compression (saves 20-40% tokens on tool-output content) ----
     const { messages: apiMessages, stats: rtkStats } = compressMessages(rawApiMessages);
@@ -492,10 +596,12 @@ export async function POST(request: NextRequest) {
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
 
-    // Pre-emit metadata: combo fallback notice OR vision rerouted notice
-    let routingPrefix: string | null = null;
+    // Pre-emit metadata: combo fallback notice OR vision rerouted notice.
+    // Bridge notice (when an image was auto-described via a vision provider)
+    // is appended separately so users see both signals when relevant.
+    const prefixEvents: string[] = [];
     if (comboFallbackInfo && comboFallbackInfo.stepIndex > 0) {
-      routingPrefix = `data: ${JSON.stringify({
+      prefixEvents.push(`data: ${JSON.stringify({
         comboFallback: true,
         stepIndex: comboFallbackInfo.stepIndex,
         winningProvider: winningProviderName,
@@ -503,20 +609,33 @@ export async function POST(request: NextRequest) {
         skippedSteps: comboFallbackInfo.attemptErrors,
         comboName,
         conversationId: convId,
-      })}\n\n`;
+      })}\n\n`);
     } else if (decision?.rerouted) {
-      routingPrefix = `data: ${JSON.stringify({
+      prefixEvents.push(`data: ${JSON.stringify({
         rerouted: true,
         from: decision.originalProviderName,
         to: decision.provider.name,
         model: decision.model,
         conversationId: convId,
-      })}\n\n`;
+      })}\n\n`);
+    }
+    if (bridgeNotice) {
+      prefixEvents.push(`data: ${JSON.stringify({
+        visionBridge: true,
+        providerName: bridgeNotice.providerName,
+        imageCount: bridgeNotice.imageCount,
+        fromCacheCount: bridgeNotice.fromCacheCount,
+        latencyMs: bridgeNotice.totalLatencyMs,
+        warning: bridgeNotice.warning ?? null,
+        conversationId: convId,
+      })}\n\n`);
     }
 
     const transformStream = new TransformStream({
       start(controller) {
-        if (routingPrefix) controller.enqueue(encoder.encode(routingPrefix));
+        for (const event of prefixEvents) {
+          controller.enqueue(encoder.encode(event));
+        }
       },
       transform(chunk, controller) {
         const text = decoder.decode(chunk);
@@ -635,6 +754,11 @@ export async function POST(request: NextRequest) {
     if (comboFallbackInfo && comboFallbackInfo.stepIndex > 0) {
       responseHeaders['X-Combo-Fallback'] = String(comboFallbackInfo.stepIndex);
       responseHeaders['X-Combo-Winner'] = encodeURIComponent(`${winningProviderName}/${winningModel}`);
+    }
+    if (bridgeNotice) {
+      responseHeaders['X-Vision-Bridge'] = '1';
+      responseHeaders['X-Vision-Bridge-Provider'] = encodeURIComponent(bridgeNotice.providerName);
+      responseHeaders['X-Vision-Bridge-Images'] = String(bridgeNotice.imageCount);
     }
 
     return new Response(transformStream.readable, { headers: responseHeaders });

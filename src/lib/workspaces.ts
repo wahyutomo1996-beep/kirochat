@@ -24,21 +24,66 @@ export interface WorkspaceDef {
   description: string;
   /**
    * Combo slug used as the default when the user clicks the workspace box.
-   * If the user doesn't have this combo instantiated yet, the chat page
-   * falls back to picking the first available combo of that category, and
-   * if no combos exist at all it falls back to a raw model id.
    */
   defaultComboSlug: string;
   /**
-   * Raw model fallback used when the user has zero combos. Picked from
-   * the built-in Kiro pool so it works out of the box.
+   * Raw model fallback used when the user has zero combos.
    */
   fallbackModel: string;
   /**
-   * Built-in system prompt seed for this workspace. The chat page uses
-   * this when starting a brand-new conversation. Empty string = no seed.
+   * Built-in system prompt seed for this workspace.
    */
   systemPrompt: string;
+  /**
+   * When true, images attached in this workspace are auto-described via
+   * a vision-capable provider (Gemini/GPT-4o/Haiku) before forwarding to
+   * the workspace's primary model. Lets users use Kiro-backed combos with
+   * image input.
+   *
+   * User can override per-workspace via User.workspaceSettings JSON.
+   */
+  bridgeImagesByDefault: boolean;
+}
+
+export interface UserWorkspaceSettings {
+  bridgeImages?: boolean;
+}
+
+/**
+ * Resolve effective settings for a user + workspace. Falls back to the
+ * workspace's built-in defaults when user hasn't configured anything.
+ */
+export function resolveWorkspaceSettings(
+  workspaceId: string,
+  userSettings: Record<string, UserWorkspaceSettings | undefined> | null,
+): { bridgeImages: boolean } {
+  const ws = findWorkspace(workspaceId);
+  const userOverride = userSettings?.[workspaceId] ?? {};
+  return {
+    bridgeImages:
+      userOverride.bridgeImages !== undefined
+        ? userOverride.bridgeImages
+        : ws?.bridgeImagesByDefault ?? true,
+  };
+}
+
+/**
+ * Parse the JSON-serialized workspaceSettings column off a User row.
+ * Returns empty record on parse failure (defensive).
+ */
+export function parseUserWorkspaceSettings(
+  json: string | null | undefined,
+): Record<string, UserWorkspaceSettings> {
+  if (!json) return {};
+  try {
+    const parsed = JSON.parse(json);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, UserWorkspaceSettings>;
+    }
+  } catch {
+    /* ignore */
+  }
+  return {};
 }
 
 export const WORKSPACES: WorkspaceDef[] = [
@@ -50,6 +95,7 @@ export const WORKSPACES: WorkspaceDef[] = [
     defaultComboSlug: 'general-balanced',
     fallbackModel: 'kiro/claude-sonnet-4.6',
     systemPrompt: '',
+    bridgeImagesByDefault: true,
   },
   {
     id: 'coding',
@@ -62,6 +108,7 @@ export const WORKSPACES: WorkspaceDef[] = [
       'You are a senior software engineer. Be precise, give working code, and explain edge cases. ' +
       'When you write code, prefer clarity over cleverness. If the user shares a bug, identify the root ' +
       'cause before suggesting a fix.',
+    bridgeImagesByDefault: true,
   },
   {
     id: 'trading',
@@ -74,6 +121,7 @@ export const WORKSPACES: WorkspaceDef[] = [
       'You are a trading analyst. Stay terse, lead with the signal, then justify briefly. Use bullet ' +
       'points for multi-asset views. Quantify uncertainty with explicit probabilities or ranges. ' +
       'Never give financial advice — frame everything as analysis.',
+    bridgeImagesByDefault: true,
   },
 ];
 

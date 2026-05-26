@@ -19,6 +19,10 @@ model User {
   apiKeyHash          String?        @unique
   /// Forces password change on next login (used for default admin seed).
   mustChangePassword  Boolean        @default(false)
+  /// Per-workspace user preferences serialized as JSON, e.g.
+  /// {"coding":{"bridgeImages":true},"trading":{"bridgeImages":true}}
+  /// Default empty {} means workspace-level defaults from src/lib/workspaces.ts apply.
+  workspaceSettings   String         @default("{}")
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
   providers           Provider[]

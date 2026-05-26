@@ -118,6 +118,18 @@ export default function ChatPage() {
   const [streaming, setStreaming] = useState(false);
   const [streamContent, setStreamContent] = useState('');
   const [routingNotice, setRoutingNotice] = useState<{ from: string; to: string; model: string } | null>(null);
+  /**
+   * Set when an attached image was auto-described by a vision provider
+   * before being forwarded to the workspace's primary model. Shown as an
+   * inline chip so the user knows extra round-trip happened.
+   */
+  const [bridgeNotice, setBridgeNotice] = useState<{
+    providerName: string;
+    imageCount: number;
+    fromCacheCount: number;
+    latencyMs: number;
+    warning: string | null;
+  } | null>(null);
   const [user, setUser] = useState<{ username: string; role: string } | null>(null);
   const [initialLoad, setInitialLoad] = useState(true);
 
@@ -270,6 +282,7 @@ export default function ChatPage() {
     setMessages([]);
     setStreamContent('');
     setRoutingNotice(null);
+    setBridgeNotice(null);
     // Close mobile drawer after selection (UX: user wants to see chat)
     setMobileSidebarOpen(false);
     // Reset side panel for new workspace
@@ -360,7 +373,7 @@ export default function ChatPage() {
 
     const userMessage = input;
     const userImages = [...images];
-    setInput(''); setImages([]); setStreaming(true); setStreamContent(''); setRoutingNotice(null);
+    setInput(''); setImages([]); setStreaming(true); setStreamContent(''); setRoutingNotice(null); setBridgeNotice(null);
 
     const tempMsg: Message = {
       id: 'temp-' + Date.now(),
@@ -419,6 +432,16 @@ export default function ChatPage() {
               setRoutingNotice({ from: p.from, to: p.to, model: p.model });
               continue;
             }
+            if (p.visionBridge) {
+              setBridgeNotice({
+                providerName: p.providerName,
+                imageCount: p.imageCount,
+                fromCacheCount: p.fromCacheCount,
+                latencyMs: p.latencyMs,
+                warning: p.warning,
+              });
+              continue;
+            }
             if (p.comboFallback) {
               setRoutingNotice({
                 from: p.comboName || 'combo step 1',
@@ -460,6 +483,7 @@ export default function ChatPage() {
     setMessages([]);
     setStreamContent('');
     setRoutingNotice(null);
+    setBridgeNotice(null);
   };
 
   const deleteConversation = async (convId: string) => {
@@ -812,6 +836,43 @@ export default function ChatPage() {
                       {' '}<span className="text-blue-400/60">({routingNotice.model})</span>
                     </span>
                   </div>
+                </div>
+              )}
+
+              {bridgeNotice && (
+                <div className="animate-fade-in mb-2">
+                  {bridgeNotice.warning ? (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-xs text-amber-300 inline-flex items-start gap-2">
+                      <svg className="w-3.5 h-3.5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      <span>
+                        <span className="font-medium">Vision bridge unavailable.</span>{' '}
+                        {bridgeNotice.warning}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2 text-xs text-emerald-300 inline-flex items-center gap-2">
+                      <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      <span>
+                        Vision bridge via{' '}
+                        <span className="font-medium text-emerald-200">{bridgeNotice.providerName}</span>
+                        {' · '}
+                        <span className="tabular-nums">
+                          {bridgeNotice.imageCount} image{bridgeNotice.imageCount !== 1 ? 's' : ''}
+                        </span>
+                        {bridgeNotice.fromCacheCount > 0 && (
+                          <span className="text-emerald-400/70"> ({bridgeNotice.fromCacheCount} cached)</span>
+                        )}
+                        {bridgeNotice.latencyMs > 0 && (
+                          <span className="text-emerald-400/60"> · {bridgeNotice.latencyMs}ms</span>
+                        )}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
