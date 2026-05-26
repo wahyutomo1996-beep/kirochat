@@ -10,17 +10,18 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-white text-black hover:bg-brand-dim',
-  secondary: 'bg-surface-1 border border-edge text-white hover:border-edge-hover hover:bg-surface-2',
-  ghost: 'text-txt-muted hover:text-white hover:bg-surface-1',
-  danger: 'bg-surface-1 border border-edge text-txt-muted hover:text-red-400 hover:border-red-500/50',
-  outline: 'border border-edge text-white hover:border-edge-hover hover:bg-surface-1',
+  // Primary = Linear lavender CTA. Single chromatic accent across the app.
+  primary: 'bg-accent text-white hover:bg-accent-hover active:bg-accent-focus shadow-accent',
+  secondary: 'bg-surface-1 border border-hairline text-ink hover:border-hairline-strong hover:bg-surface-2',
+  ghost: 'text-ink-subtle hover:text-ink hover:bg-surface-1',
+  danger: 'bg-surface-1 border border-hairline text-ink-subtle hover:text-red-400 hover:border-red-500/50',
+  outline: 'border border-hairline text-ink hover:border-hairline-strong hover:bg-surface-1',
 };
 
 const sizes: Record<Size, string> = {
   xs: 'px-2.5 py-1 text-xs',
-  sm: 'px-3 py-1.5 text-xs',
-  md: 'px-4 py-2.5 text-sm',
+  sm: 'px-3 py-1.5 text-sm',  // Linear button-sm is 14px / weight 500
+  md: 'px-3.5 py-2 text-sm',  // Linear compact spec: 8px·14px padding
 };
 
 export const Button = forwardRef<HTMLButtonElement, Props>(

@@ -5,44 +5,50 @@
 @layer base {
   :root {
     /*
-     * Workspace personality colors. Each workspace has:
-     *   --ws-X-h           hue (0-360) — used in hsl() for tint variants
-     *   --ws-X             solid mid-saturation color (hover, accent)
-     *   --ws-X-bright      brighter version for glows + active highlights
-     *   --ws-X-glow        rgba for box-shadow glow effects
-     *
-     * General  — Indigo. Calm neutral default.
-     * Coding   — Mint/Cyan. Technical, precise.
-     * Trading  — Amber/Gold. Hot, active, market-energy.
+     * Linear DESIGN.md palette as CSS vars (mirror tailwind.config.js).
+     * Use these in raw CSS where Tailwind classes don't reach.
      */
-    --ws-general-h: 240;
-    --ws-general: hsl(240, 70%, 65%);
-    --ws-general-bright: hsl(240, 80%, 72%);
-    --ws-general-glow: 99 102 241;        /* rgb for shadow alpha control */
+    --canvas: #010102;
+    --surface-1: #0f1011;
+    --surface-2: #141516;
+    --surface-3: #18191a;
+    --surface-4: #191a1b;
+    --hairline: #23252a;
+    --hairline-strong: #34343a;
+    --ink: #f7f8f8;
+    --ink-muted: #d0d6e0;
+    --ink-subtle: #8a8f98;
+    --accent: #5e6ad2;
+    --accent-hover: #828fff;
+    --accent-focus: #5e69d1;
 
-    --ws-coding-h: 158;
+    /*
+     * Workspace personality tints — kept for workspace switching, but
+     * dialed down so they coexist with Linear's "single chromatic accent"
+     * rule. Lavender is now the universal CTA color; workspace tints only
+     * affect ambient glow, never actionable elements.
+     *
+     * General  — Lavender (matches Linear default).
+     * Coding   — Mint. Technical, precise.
+     * Trading  — Amber. Hot, market-energy.
+     */
+    --ws-general: var(--accent);
+    --ws-general-bright: var(--accent-hover);
+    --ws-general-glow: 94 106 210;        /* lavender rgb */
+
     --ws-coding: hsl(158, 65%, 55%);
     --ws-coding-bright: hsl(158, 75%, 62%);
     --ws-coding-glow: 16 185 129;
 
-    --ws-trading-h: 38;
     --ws-trading: hsl(38, 95%, 60%);
     --ws-trading-bright: hsl(38, 100%, 67%);
     --ws-trading-glow: 245 158 11;
 
-    /* Active workspace pointer — JS sets this on documentElement when
-     * workspace changes, so any element using var(--ws-active) inherits
-     * the tint without per-component coupling. */
     --ws-active: var(--ws-general);
     --ws-active-bright: var(--ws-general-bright);
     --ws-active-glow: var(--ws-general-glow);
   }
 
-  /*
-   * Selectors for body[data-workspace="X"] — set by chat page when user
-   * activates a workspace. Cascades --ws-active to children, lighting up
-   * borders, glows, and accents in the workspace's color.
-   */
   body[data-workspace="general"] {
     --ws-active: var(--ws-general);
     --ws-active-bright: var(--ws-general-bright);
@@ -65,32 +71,29 @@
 
   html, body {
     /*
-     * Atmospheric mesh background — three radial gradients with workspace
-     * accent colors at very low opacity, layered over the base near-black.
-     * The fixed bg-attachment makes it stay in place while content scrolls,
-     * giving subtle depth without distraction.
-     *
-     * The center accent gradient picks up --ws-active so the room "glows"
-     * faintly with the active workspace's color.
+     * Linear's marketing surface is anchor-deep #010102 with NO atmospheric
+     * gradient — the dark canvas IS the whitespace. We keep a single
+     * extremely-faint lavender wash at the top so workspace switches still
+     * register as a tonal shift without violating "no atmospheric gradients".
      */
     background:
-      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(var(--ws-active-glow) / 0.08), transparent 60%),
-      radial-gradient(ellipse 60% 80% at 100% 50%, rgba(99, 102, 241, 0.04), transparent 70%),
-      radial-gradient(ellipse 60% 80% at 0% 100%, rgba(16, 185, 129, 0.03), transparent 70%),
-      #0a0a0c;
+      radial-gradient(ellipse 80% 40% at 50% -20%, rgba(var(--ws-active-glow) / 0.05), transparent 70%),
+      var(--canvas);
     background-attachment: fixed;
-    color: #ffffff;
-    transition: background 600ms ease;  /* smooth transition when workspace switches */
+    color: var(--ink);
+    transition: background 600ms ease;
   }
 
   body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-feature-settings: 'cv11', 'ss01';
+    /* Inter cv11 = single-storey a, ss01 = open digits — closest to Linear's cut */
+    font-feature-settings: 'cv11', 'ss01', 'cv05';
+    letter-spacing: -0.005em;  /* Linear body holds at -0.05px ≈ -0.005em */
   }
 
-  /* Scrollbar */
+  /* Scrollbar — Linear keeps these invisible-until-needed */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -99,110 +102,130 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--hairline);
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(var(--ws-active-glow) / 0.3);
+    background: var(--hairline-strong);
   }
 
   ::selection {
-    background: rgba(var(--ws-active-glow) / 0.3);
-    color: #ffffff;
+    background: rgba(94, 106, 210, 0.35);  /* lavender selection */
+    color: var(--ink);
   }
 
-  /* Focus ring uses workspace tint */
+  /* Focus ring — Linear spec: 2px lavender at 50% opacity */
   *:focus-visible {
-    outline: 2px solid rgba(var(--ws-active-glow) / 0.6);
+    outline: 2px solid rgba(94, 105, 210, 0.5);
     outline-offset: 2px;
   }
 
-  /* Placeholder - tetep readable */
   ::placeholder {
-    color: #7a7a7a !important;
+    color: var(--ink-subtle) !important;
     opacity: 1;
   }
 
-  /* Autofill */
+  /* Autofill — keep surface-1, ink, hairline */
   input:-webkit-autofill,
   input:-webkit-autofill:hover,
   input:-webkit-autofill:focus,
   textarea:-webkit-autofill {
-    -webkit-box-shadow: 0 0 0 30px #161616 inset !important;
-    -webkit-text-fill-color: #ffffff !important;
-    border-color: #333333 !important;
-    caret-color: #ffffff;
+    -webkit-box-shadow: 0 0 0 30px var(--surface-1) inset !important;
+    -webkit-text-fill-color: var(--ink) !important;
+    border-color: var(--hairline) !important;
+    caret-color: var(--ink);
   }
 
   textarea {
     resize: none;
   }
 
-  /* Default text contrast */
   label {
-    color: #b8b8b8;
+    color: var(--ink-muted);
   }
 
   input, textarea, select {
-    color: #ffffff;
+    color: var(--ink);
   }
 }
 
 @layer components {
-  /* Reusable button styles */
+  /*
+   * Linear button system — port directly from DESIGN.md.
+   * - primary: lavender bg, white text, 8px corners (NEVER pill)
+   * - secondary: surface-1 bg, ink text, 1px hairline
+   * - ghost: transparent, ink-subtle, hover ink
+   * - danger: same shape as ghost, red on hover
+   *
+   * All buttons: padding 8px 14px (Linear's compact spec), rounded-md (8px),
+   * font-medium, text-sm.
+   */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-brand-dim disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150;
+    @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent-hover active:bg-accent-focus disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150;
+    /* Lavender CTA — Linear's signature touchpoint */
   }
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 bg-surface-1 border border-edge text-txt-secondary text-xs font-medium rounded-md hover:text-white hover:border-edge-hover hover:bg-surface-2 transition-all;
+    @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-surface-1 border border-hairline text-ink text-sm font-medium rounded-lg hover:bg-surface-2 hover:border-hairline-strong transition-all;
   }
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 px-2.5 py-1 text-xs text-txt-muted hover:text-white transition-colors;
+    @apply inline-flex items-center justify-center gap-2 px-2.5 py-1.5 text-sm text-ink-subtle hover:text-ink transition-colors;
   }
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 px-2.5 py-1 text-xs text-txt-muted border border-edge rounded-md hover:text-red-400 hover:border-red-500/50 transition-all;
+    @apply inline-flex items-center justify-center gap-2 px-2.5 py-1.5 text-sm text-ink-subtle border border-hairline rounded-lg hover:text-red-400 hover:border-red-500/50 transition-all;
+  }
+  .btn-inverse {
+    @apply inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-white/90 transition-all;
   }
 
-  /* Reusable input style */
+  /* Inputs — Linear spec: surface-1 bg, hairline border, 8px corners */
   .input-field {
-    @apply w-full px-3.5 py-2.5 bg-surface-1 border border-edge rounded-lg text-white text-sm focus:outline-none focus:border-edge-hover focus:ring-1 focus:ring-edge-hover transition-all;
+    @apply w-full px-3 py-2 bg-surface-1 border border-hairline rounded-lg text-ink text-sm focus:outline-none focus:border-hairline-strong focus:ring-2 focus:ring-accent/40 transition-all;
   }
 
-  /* Reusable card */
+  /* Cards — Linear surface ladder. Default = surface-1 + hairline + 12px */
   .card {
-    @apply bg-surface-1 border border-edge rounded-xl;
+    @apply bg-surface-1 border border-hairline rounded-xl;
+  }
+  .card-featured {
+    @apply bg-surface-2 border border-hairline-strong rounded-xl;
   }
 
-  /* Section label */
+  /* Eyebrow — positive tracking 0.4px is Linear's signature taxonomy mark */
   .label-mini {
-    @apply text-[11px] font-semibold text-txt-muted uppercase tracking-wider;
+    @apply text-[13px] font-medium text-ink-subtle uppercase tracking-eyebrow;
   }
 
-  /* Prose / Markdown */
+  /* Status pill — Linear status badges */
+  .status-pill {
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium bg-surface-2 text-ink-muted rounded-full border border-hairline;
+  }
+
+  /* Prose / Markdown — keep unchanged structurally; just use Linear tokens */
   .prose {
-    color: #ffffff;
-    line-height: 1.7;
-    font-size: 0.875rem;
+    color: var(--ink);
+    line-height: 1.6;
+    font-size: 0.9375rem;  /* 15px — between body-sm 14 and body 16 */
+    letter-spacing: -0.005em;
   }
   .prose pre {
-    background: #161616;
-    border: 1px solid #333333;
+    background: var(--surface-1);
+    border: 1px solid var(--hairline);
     border-radius: 8px;
     padding: 1rem;
     overflow-x: auto;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.8rem;
-    color: #ffffff;
+    font-family: 'JetBrains Mono', ui-monospace, SF Mono, Menlo, monospace;
+    font-size: 0.8125rem;  /* 13px — matches Linear mono */
+    color: var(--ink);
     margin: 0.75rem 0;
   }
   .prose code {
-    background: #1f1f1f;
-    border: 1px solid #333333;
+    background: var(--surface-2);
+    border: 1px solid var(--hairline);
     padding: 0.15rem 0.4rem;
     border-radius: 4px;
     font-size: 0.85em;
-    font-family: 'JetBrains Mono', monospace;
-    color: #ffffff;
+    font-family: 'JetBrains Mono', ui-monospace, SF Mono, Menlo, monospace;
+    color: var(--ink);
   }
   .prose pre code {
     background: transparent;
@@ -211,39 +234,40 @@
   }
   .prose p {
     margin-bottom: 0.75rem;
-    color: #ffffff;
+    color: var(--ink);
   }
   .prose h1, .prose h2, .prose h3, .prose h4 {
-    color: #ffffff;
+    color: var(--ink);
     font-weight: 600;
     margin-top: 1.5rem;
     margin-bottom: 0.5rem;
+    letter-spacing: -0.018em;  /* card-title spacing */
   }
-  .prose h1 { font-size: 1.5rem; }
-  .prose h2 { font-size: 1.25rem; }
-  .prose h3 { font-size: 1.1rem; }
+  .prose h1 { font-size: 1.625rem; letter-spacing: -0.021em; }
+  .prose h2 { font-size: 1.375rem; }
+  .prose h3 { font-size: 1.125rem; }
   .prose ul, .prose ol {
     padding-left: 1.5rem;
     margin-bottom: 0.75rem;
-    color: #ffffff;
+    color: var(--ink);
   }
   .prose li {
     margin-bottom: 0.25rem;
-    color: #ffffff;
+    color: var(--ink);
   }
   .prose a {
-    color: #ffffff;
+    color: var(--accent-hover);  /* Linear: link emphasis uses lavender */
     text-decoration: underline;
     text-underline-offset: 3px;
-    text-decoration-color: #5c5c5c;
+    text-decoration-color: rgba(94, 106, 210, 0.4);
   }
   .prose a:hover {
-    text-decoration-color: #ffffff;
+    text-decoration-color: var(--accent-hover);
   }
   .prose blockquote {
-    border-left: 3px solid #4a4a4a;
+    border-left: 3px solid var(--accent);
     padding-left: 1rem;
-    color: #b8b8b8;
+    color: var(--ink-muted);
     font-style: italic;
     margin: 0.75rem 0;
   }
@@ -253,24 +277,24 @@
     margin: 0.75rem 0;
   }
   .prose th, .prose td {
-    border: 1px solid #333333;
+    border: 1px solid var(--hairline);
     padding: 0.5rem 0.75rem;
     text-align: left;
-    color: #ffffff;
+    color: var(--ink);
   }
   .prose th {
-    background: #1f1f1f;
+    background: var(--surface-2);
     font-weight: 600;
   }
   .prose strong {
-    color: #ffffff;
+    color: var(--ink);
     font-weight: 600;
   }
   .prose em {
-    color: #e5e5e5;
+    color: var(--ink-muted);
   }
   .prose hr {
-    border-color: #333333;
+    border-color: var(--hairline);
     margin: 1rem 0;
   }
 }
