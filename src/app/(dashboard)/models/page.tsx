@@ -320,7 +320,7 @@ function ModelCard({
   const hasResult = !!result;
 
   return (
-    <div className="bg-surface-1/40 backdrop-blur-sm border border-edge/60 rounded-xl p-3 hover:border-edge-hover transition-colors">
+    <div className="bg-surface-1 border border-hairline rounded-xl p-3 hover:border-hairline-strong transition-colors">
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">

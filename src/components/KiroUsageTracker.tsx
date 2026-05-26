@@ -368,7 +368,7 @@ export function KiroUsageTracker({ showSummary = true, showPerAccount = true, co
   };
 
   return (
-    <div className="bg-surface-1/40 border border-edge/60 rounded-xl backdrop-blur-sm overflow-hidden">
+    <div className="bg-surface-1 border border-hairline rounded-xl overflow-hidden">
       {/* Header bar with refresh controls */}
       <div className="px-4 py-2.5 border-b border-edge/40 flex items-center gap-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">

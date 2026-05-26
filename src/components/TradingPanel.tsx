@@ -343,7 +343,7 @@ export function TradingPanel({ messages }: Props) {
   const ACCENT_RGB = '245 158 11';
 
   return (
-    <div className="flex flex-col h-full bg-surface-1/40 backdrop-blur-xl border-l border-edge/60 min-w-0">
+    <div className="flex flex-col h-full bg-surface-1 border-l border-hairline min-w-0">
       {/* Header */}
       <div className="px-4 py-2.5 border-b border-edge/60 flex items-center gap-2 shrink-0">
         <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

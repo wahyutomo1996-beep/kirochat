@@ -16,23 +16,22 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <nav className="flex items-center justify-between px-6 py-4 border-b border-edge/60 backdrop-blur-md bg-surface-0/40 sticky top-0 z-10">
+      <nav className="flex items-center justify-between px-6 py-4 border-b border-hairline bg-canvas sticky top-0 z-10">
         <div className="flex items-center gap-2.5">
           <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center"
+            className="w-8 h-8 rounded-lg flex items-center justify-center bg-accent"
             style={{
-              background: 'linear-gradient(135deg, rgba(var(--ws-active-glow) / 0.7), rgba(var(--ws-active-glow) / 0.3))',
-              boxShadow: '0 4px 16px -4px rgba(var(--ws-active-glow) / 0.5)',
+              boxShadow: '0 4px 16px -4px rgba(94, 106, 210, 0.5)',
             }}
           >
             <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
           </div>
-          <span className="text-white font-semibold text-lg tracking-tight">Prometheus</span>
+          <span className="text-ink font-semibold text-lg tracking-tight">Prometheus</span>
         </div>
         <div className="flex items-center gap-3">
-          <Link href="/login" className="text-sm text-txt-secondary hover:text-white transition-colors px-3 py-1.5">
+          <Link href="/login" className="text-sm text-ink-muted hover:text-ink transition-colors px-3 py-1.5">
             Sign in
           </Link>
           <Link
@@ -46,19 +45,19 @@ export default function Home() {
 
       <main className="flex-1 flex items-center justify-center px-6">
         <div className="max-w-3xl w-full text-center py-20">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-surface-1/60 border border-edge/60 rounded-full text-xs text-txt-muted mb-6 backdrop-blur-sm">
-            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-surface-1 border border-hairline rounded-full text-xs text-ink-subtle mb-6">
+            <span className="w-1.5 h-1.5 bg-success rounded-full animate-pulse"></span>
             One workspace for chat, code, and trading
           </div>
 
-          <h1 className="text-5xl md:text-6xl font-bold text-white tracking-tight leading-tight mb-6">
+          <h1 className="text-5xl md:text-6xl font-semibold text-ink tracking-display-md leading-tight mb-6">
             AI that adapts to<br />
-            <span className="bg-gradient-to-r from-white via-gray-300 to-gray-500 bg-clip-text text-transparent">
+            <span className="text-ink-muted">
               what you&apos;re doing
             </span>
           </h1>
 
-          <p className="text-lg text-txt-muted max-w-xl mx-auto mb-10 leading-relaxed">
+          <p className="typo-body-lg text-ink-muted max-w-xl mx-auto mb-10 leading-relaxed">
             Workspace-aware AI chat with auto-fallback combos, RTK token compression, and side panels
             tailored for engineering and market analysis. Bring your own keys — your data stays yours.
           </p>
@@ -75,7 +74,7 @@ export default function Home() {
             </Link>
             <Link
               href="/login"
-              className="inline-flex items-center gap-2 border border-edge text-white font-medium px-6 py-3 rounded-xl hover:bg-surface-1/60 hover:border-edge-hover backdrop-blur-sm hover-lift text-sm"
+              className="inline-flex items-center gap-2 bg-surface-1 border border-hairline text-ink font-medium px-6 py-3 rounded-xl hover:bg-surface-2 hover:border-hairline-strong hover-lift text-sm transition-all"
             >
               Sign in
             </Link>
@@ -169,10 +168,7 @@ function FeatureCard({
   text: string;
 }) {
   return (
-    <div
-      className="bg-surface-1/40 border rounded-xl p-5 backdrop-blur-sm hover-lift transition-all"
-      style={{ borderColor: 'rgba(255,255,255,0.06)' }}
-    >
+    <div className="bg-surface-1 border border-hairline rounded-xl p-6 hover-lift hover:border-hairline-strong transition-all">
       <div
         className="w-9 h-9 rounded-lg flex items-center justify-center mb-3"
         style={{ background: gradient, border: `1px solid ${border}` }}
@@ -181,8 +177,8 @@ function FeatureCard({
           {icon}
         </svg>
       </div>
-      <h3 className="text-sm font-semibold text-white mb-1">{title}</h3>
-      <p className="text-xs text-txt-muted leading-relaxed">{desc}</p>
+      <h3 className="text-sm font-semibold text-ink mb-1">{title}</h3>
+      <p className="text-xs text-ink-subtle leading-relaxed">{desc}</p>
     </div>
   );
 }

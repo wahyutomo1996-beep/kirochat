@@ -142,7 +142,7 @@ export function UserPill({ username, role }: UserPillProps) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2.5 px-2.5 py-2 bg-surface-1/60 hover:bg-surface-2/80 border border-edge hover:border-edge-hover backdrop-blur-sm rounded-xl transition-all group hover-lift"
+        className="w-full flex items-center gap-2.5 px-2.5 py-2 bg-surface-1 hover:bg-surface-2 border border-hairline hover:border-hairline-strong rounded-xl transition-all group hover-lift"
         aria-haspopup="menu"
         aria-expanded={open}
       >

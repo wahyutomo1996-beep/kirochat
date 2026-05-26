@@ -84,7 +84,7 @@ export function WorkspaceBox({
       className={`group/ws rounded-xl border overflow-hidden hover-lift ${
         isActive
           ? ''
-          : 'bg-surface-1/60 border-edge hover:border-edge-hover hover:bg-surface-2/80 backdrop-blur-sm'
+          : 'bg-surface-1 border-hairline hover:border-hairline-strong hover:bg-surface-2'
       }`}
     >
       {/*

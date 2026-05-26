@@ -182,12 +182,12 @@ export function CodingPanel({ messages }: Props) {
   // ─── Empty state ────────────────────────────────────────────────────────
   if (blocks.length === 0) {
     return (
-      <div className="flex flex-col h-full bg-surface-1/40 backdrop-blur-xl border-l border-edge/60">
-        <div className="px-4 py-3 border-b border-edge/60 flex items-center gap-2 shrink-0">
-          <svg className="w-4 h-4 text-txt-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="flex flex-col h-full bg-surface-1 border-l border-hairline">
+        <div className="px-4 py-3 border-b border-hairline flex items-center gap-2 shrink-0">
+          <svg className="w-4 h-4 text-ink-subtle" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
           </svg>
-          <p className="text-xs font-semibold text-txt-secondary uppercase tracking-wider">Code Artifacts</p>
+          <p className="typo-eyebrow">Code Artifacts</p>
         </div>
         <div className="flex-1 flex items-center justify-center px-6">
           <div className="text-center max-w-xs">
@@ -214,9 +214,9 @@ export function CodingPanel({ messages }: Props) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-surface-1/40 backdrop-blur-xl border-l border-edge/60 min-w-0">
+    <div className="flex flex-col h-full bg-surface-1 border-l border-hairline min-w-0">
       {/* Header with tab strip */}
-      <div className="border-b border-edge/60 shrink-0">
+      <div className="border-b border-hairline shrink-0">
         <div className="px-4 py-2 flex items-center gap-2">
           <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
@@ -289,7 +289,7 @@ export function CodingPanel({ messages }: Props) {
 
           {/* Code body — scrollable. Pre-wrap retains formatting; horizontal
               scroll on long lines. */}
-          <div className="flex-1 overflow-auto bg-[#0d1117]/80 backdrop-blur-sm">
+          <div className="flex-1 overflow-auto bg-[#0d1117]">
             <pre className="p-4 text-[12px] leading-[1.6]">
               <code
                 ref={codeRef}

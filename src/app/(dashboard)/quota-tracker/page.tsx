@@ -259,7 +259,7 @@ export default function QuotaTrackerPage() {
         </div>
 
         {/* Filter bar */}
-        <div className="bg-surface-1/40 backdrop-blur-sm border border-edge/60 rounded-xl p-3 mb-4 flex flex-wrap items-center gap-2">
+        <div className="bg-surface-1 border border-hairline rounded-xl p-3 mb-4 flex flex-wrap items-center gap-2">
           {/* Status filter */}
           <FilterGroup label="Status">
             {(['all', 'active', 'exhausted'] as const).map((s) => (
@@ -446,8 +446,8 @@ function SummaryChip({
   const valueColor =
     tone === 'good' ? 'text-emerald-300' : tone === 'bad' ? 'text-red-300' : 'text-white';
   return (
-    <div className="bg-surface-1/40 backdrop-blur-sm border border-edge/60 rounded-xl px-3 py-2.5">
-      <p className="text-[10px] uppercase tracking-wider text-txt-muted">{label}</p>
+    <div className="bg-surface-1 border border-hairline rounded-xl px-3 py-2.5">
+      <p className="typo-eyebrow">{label}</p>
       <p className={`text-base fold:text-lg font-semibold tabular-nums ${valueColor}`}>{value}</p>
     </div>
   );
@@ -492,7 +492,7 @@ function FilterPill({
 
 function EmptyState() {
   return (
-    <div className="bg-surface-1/40 border border-edge/60 rounded-xl p-12 text-center backdrop-blur-sm">
+    <div className="bg-surface-1 border border-hairline rounded-xl p-12 text-center">
       <div
         className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 text-2xl"
         style={{
@@ -556,7 +556,7 @@ function QuotaCard({
   const isExhausted = account.status === 'exhausted';
 
   return (
-    <div className="bg-surface-1/40 backdrop-blur-sm border border-edge/60 rounded-2xl p-4 hover:border-edge-hover transition-all hover-lift">
+    <div className="bg-surface-1 border border-hairline rounded-2xl p-5 hover:border-hairline-strong transition-all hover-lift">
       {/* Top row: status dot + email + action icons */}
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="flex items-center gap-2 min-w-0 flex-1">
