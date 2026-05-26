@@ -9,6 +9,7 @@ import { estimateCost } from '@/lib/pricing';
 import { rateLimit } from '@/lib/ratelimit';
 import { readJsonBody, corsHeaders, PayloadTooLargeError } from '@/lib/http';
 import { compressMessages } from '@/lib/rtk-compression';
+import { bridgeImage, formatBridgedDescription } from '@/lib/vision-bridge';
 
 interface ChatCompletionRequest {
   model: string;
@@ -27,6 +28,90 @@ const MAX_BODY_BYTES = 5 * 1024 * 1024;
 function flattenContent(content: ChatMessage['content']): string {
   if (typeof content === 'string') return content;
   return content.map(c => c.text || '').join(' ');
+}
+
+/**
+ * Vision auto-bridge for OpenAI-compat clients.
+ *
+ * Kiro models are TEXT-ONLY. When an OpenAI-style client (Cursor, Continue,
+ * OpenCode, Cline, etc) sends image_url parts in a message, we silently
+ * route those images through the user's vision provider (OpenAI, Gemini,
+ * OpenRouter) and inline the textual description in place of the image.
+ *
+ * The downstream Kiro call only sees flattened text — same shape it
+ * would handle today — but the conversation no longer dead-ends with
+ * "I don't see an image".
+ *
+ * If the user has no vision provider, the image part is replaced with a
+ * note explaining how to enable bridging. We never fail the request
+ * because of a missing image.
+ *
+ * Returns a copy of the messages array with images replaced.
+ */
+async function bridgeImagesInMessages(
+  userId: string,
+  messages: ChatMessage[],
+): Promise<{ messages: ChatMessage[]; bridged: number; warning?: string }> {
+  let bridged = 0;
+  let warning: string | undefined;
+  const out: ChatMessage[] = [];
+
+  for (const msg of messages) {
+    // String content has no images — pass through
+    if (typeof msg.content === 'string') {
+      out.push(msg);
+      continue;
+    }
+    if (!Array.isArray(msg.content)) {
+      out.push(msg);
+      continue;
+    }
+
+    // Walk parts; collect text and bridge images
+    const textParts: string[] = [];
+    const descriptions: string[] = [];
+    let imgIndex = 0;
+    for (const part of msg.content) {
+      if (part.type === 'text' && part.text) {
+        textParts.push(part.text);
+        continue;
+      }
+      if (part.type === 'image_url' && part.image_url?.url) {
+        const result = await bridgeImage(userId, part.image_url.url, 'general');
+        descriptions.push(formatBridgedDescription(result, imgIndex));
+        imgIndex++;
+        if ('error' in result) {
+          warning = result.error;
+        } else {
+          bridged++;
+        }
+      }
+    }
+
+    if (descriptions.length === 0) {
+      // No images — flatten any remaining text-only parts
+      out.push({ ...msg, content: textParts.join('\n') });
+      continue;
+    }
+
+    // Combine: original user text + each image description, joined with blank lines
+    const combined = [...textParts, ...descriptions].filter(Boolean).join('\n\n');
+    out.push({ ...msg, content: combined });
+  }
+
+  return { messages: out, bridged, warning };
+}
+
+/** True iff any message carries an image_url content block */
+function hasImageParts(messages: ChatMessage[]): boolean {
+  for (const msg of messages) {
+    if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if (part.type === 'image_url') return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -95,9 +180,24 @@ export async function POST(request: Request) {
     // Saves 20-40% input tokens on requests carrying tool_result blocks
     // (git diff, grep, ls, file dumps from coding agents).
     const rtkDisabled = request.headers.get('x-rtk-disable') === '1';
-    const { messages, stats: rtkStats } = rtkDisabled
+    const { messages: rtkMessages, stats: rtkStats } = rtkDisabled
       ? { messages: rawMessages, stats: null }
       : compressMessages(rawMessages);
+
+    // Vision auto-bridge: if the request contains image_url parts and the
+    // target model is text-only (Kiro), describe the images via the user's
+    // vision provider and inline the descriptions before dispatching.
+    // Bridge skipped via x-vision-bridge: 0 header.
+    const bridgeDisabled = request.headers.get('x-vision-bridge') === '0';
+    let messages: ChatMessage[] = rtkMessages;
+    let visionBridged = 0;
+    let visionWarning: string | undefined;
+    if (!bridgeDisabled && hasImageParts(rtkMessages)) {
+      const bridgeResult = await bridgeImagesInMessages(userId, rtkMessages);
+      messages = bridgeResult.messages;
+      visionBridged = bridgeResult.bridged;
+      visionWarning = bridgeResult.warning;
+    }
 
     const found = findModel(model);
     if (!found) {
@@ -192,6 +292,12 @@ export async function POST(request: Request) {
                 'X-RTK-Blocks': String(rtkStats.blocksCompressed),
               }
             : {}),
+          ...(visionBridged > 0
+            ? { 'X-Vision-Bridge': String(visionBridged) }
+            : {}),
+          ...(visionWarning
+            ? { 'X-Vision-Bridge-Warning': encodeURIComponent(visionWarning.slice(0, 200)) }
+            : {}),
         },
       });
     }
@@ -260,6 +366,12 @@ export async function POST(request: Request) {
                 'X-RTK-Saved': String(rtkStats.bytesBefore - rtkStats.bytesAfter),
                 'X-RTK-Blocks': String(rtkStats.blocksCompressed),
               }
+            : {}),
+          ...(visionBridged > 0
+            ? { 'X-Vision-Bridge': String(visionBridged) }
+            : {}),
+          ...(visionWarning
+            ? { 'X-Vision-Bridge-Warning': encodeURIComponent(visionWarning.slice(0, 200)) }
             : {}),
         },
       },
