@@ -46,15 +46,62 @@ import {
   useRegenerateApiKeyMutation,
 } from '@/lib/store/api/apiKeyApi';
 
-const PRESETS = [
-  { name: 'WIR Cloud', baseUrl: 'http://137.184.195.229:3000/v1' },
-  { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
-  { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
-  { name: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' },
-  { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' },
-  { name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
-  { name: 'Mistral', baseUrl: 'https://api.mistral.ai/v1' },
-  { name: 'Together AI', baseUrl: 'https://api.together.xyz/v1' },
+/**
+ * Preset list grouped by category. Each provider entry has:
+ *   name      Display label
+ *   baseUrl   OpenAI-compatible endpoint
+ *   icon      Single emoji shown on the chip
+ *   note      Optional short hint shown on hover
+ *
+ * To add a new provider, drop a new entry in the appropriate group.
+ * Custom (manual baseUrl entry) is always available via the form fields below.
+ */
+const PRESET_GROUPS: Array<{
+  label: string;
+  presets: Array<{ name: string; baseUrl: string; icon: string; note?: string }>;
+}> = [
+  {
+    label: 'Major',
+    presets: [
+      { name: 'OpenAI',         baseUrl: 'https://api.openai.com/v1',                          icon: '\u26AB', note: 'GPT-4o, o1, gpt-4-turbo' },
+      { name: 'Anthropic',      baseUrl: 'https://api.anthropic.com/v1',                       icon: '\u{1F9E1}', note: 'Claude 3.5 Sonnet, Opus, Haiku' },
+      { name: 'Google Gemini',  baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', icon: '\u{1F535}', note: 'Gemini 2.0, 1.5 Pro / Flash' },
+      { name: 'xAI Grok',       baseUrl: 'https://api.x.ai/v1',                                icon: '\u26A1',  note: 'grok-2, grok-2-vision' },
+      { name: 'Cohere',         baseUrl: 'https://api.cohere.ai/compatibility/v1',             icon: '\u{1F7E3}', note: 'command-r-plus' },
+    ],
+  },
+  {
+    label: 'Cheap / Asian',
+    presets: [
+      { name: 'DeepSeek',       baseUrl: 'https://api.deepseek.com/v1',                        icon: '\u{1F40B}', note: 'deepseek-chat, deepseek-reasoner' },
+      { name: 'Qwen (DashScope)', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', icon: '\u{1F407}', note: 'qwen2.5-max, qwen-plus, qwen-coder' },
+      { name: 'GLM (Zhipu)',    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',               icon: '\u{1F525}', note: 'glm-4-plus, glm-4-flash' },
+      { name: 'MiniMax',        baseUrl: 'https://api.minimaxi.chat/v1',                       icon: '\u{1F300}', note: 'MiniMax-Text-01, abab' },
+      { name: 'Moonshot Kimi',  baseUrl: 'https://api.moonshot.cn/v1',                         icon: '\u{1F319}', note: 'moonshot-v1-128k' },
+      { name: 'Mistral',        baseUrl: 'https://api.mistral.ai/v1',                          icon: '\u{1F32C}\uFE0F', note: 'mistral-large, codestral' },
+    ],
+  },
+  {
+    label: 'Aggregators',
+    presets: [
+      { name: 'OpenRouter',     baseUrl: 'https://openrouter.ai/api/v1',                       icon: '\u{1F310}', note: '300+ models, single key' },
+      { name: 'Together AI',    baseUrl: 'https://api.together.xyz/v1',                        icon: '\u{1F91D}', note: 'Llama, Qwen, Mixtral hosted' },
+      { name: 'Fireworks',      baseUrl: 'https://api.fireworks.ai/inference/v1',              icon: '\u{1F386}', note: 'Fast Llama + Mixtral inference' },
+      { name: 'Groq',           baseUrl: 'https://api.groq.com/openai/v1',                     icon: '\u26A1',  note: 'Sub-100ms LPU inference' },
+      { name: 'Cerebras',       baseUrl: 'https://api.cerebras.ai/v1',                         icon: '\u{1F9E0}', note: 'Llama3.3-70B at 2000+ tok/s' },
+      { name: 'Hyperbolic',     baseUrl: 'https://api.hyperbolic.xyz/v1',                      icon: '\u{1F4E1}', note: 'Llama, Qwen, DeepSeek hosted' },
+      { name: 'Perplexity',     baseUrl: 'https://api.perplexity.ai',                          icon: '\u{1F50D}', note: 'sonar — web-grounded answers' },
+    ],
+  },
+  {
+    label: 'Self-host',
+    presets: [
+      { name: 'Ollama (local)', baseUrl: 'http://localhost:11434/v1',                          icon: '\u{1F999}', note: 'Local LLMs (llama, qwen, etc)' },
+      { name: 'LM Studio',      baseUrl: 'http://localhost:1234/v1',                           icon: '\u{1F3AF}', note: 'Local server on :1234' },
+      { name: 'vLLM',           baseUrl: 'http://localhost:8000/v1',                           icon: '\u{1F680}', note: 'Self-hosted vLLM endpoint' },
+      { name: 'LiteLLM Proxy',  baseUrl: 'http://localhost:4000/v1',                           icon: '\u{1F501}', note: 'Multi-provider router' },
+    ],
+  },
 ];
 
 /** 1234 -> "1.2K", 1234567 -> "1.2M" */
@@ -697,17 +744,47 @@ curl ${baseUrl}/chat/completions \\
                   }
                   className="px-3 py-1.5 text-xs font-medium border border-purple-500/30 bg-purple-500/10 text-purple-300 rounded-md hover:bg-purple-500/20 hover:border-purple-500/50 transition-all"
                 >
-                  Kiro Refresh Token
+                  {'\u2728'} Kiro Refresh Token
                 </button>
-                {PRESETS.map((preset) => (
-                  <button
-                    key={preset.name}
-                    type="button"
-                    onClick={() => setForm({ ...form, name: preset.name, type: 'api_key', baseUrl: preset.baseUrl })}
-                    className="px-3 py-1.5 text-xs font-medium border border-edge text-txt-secondary rounded-md hover:text-white hover:border-edge-hover hover:bg-surface-2 transition-all"
-                  >
-                    {preset.name}
-                  </button>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, name: '', type: 'api_key', baseUrl: '' })}
+                  className="px-3 py-1.5 text-xs font-medium border border-edge bg-surface-2/40 text-txt-secondary rounded-md hover:text-white hover:border-edge-hover transition-all"
+                  title="Manual entry — use the Base URL field below"
+                >
+                  + Custom
+                </button>
+              </div>
+
+              {/* Grouped preset chips */}
+              <div className="space-y-2 mt-3">
+                {PRESET_GROUPS.map((group) => (
+                  <div key={group.label}>
+                    <p className="text-[9px] uppercase tracking-wider font-semibold text-txt-faint mb-1">
+                      {group.label}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.presets.map((preset) => (
+                        <button
+                          key={preset.name}
+                          type="button"
+                          onClick={() =>
+                            setForm({
+                              ...form,
+                              name: preset.name,
+                              type: 'api_key',
+                              baseUrl: preset.baseUrl,
+                            })
+                          }
+                          title={preset.note ? `${preset.note}\n${preset.baseUrl}` : preset.baseUrl}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium border border-edge text-txt-secondary rounded-md hover:text-white hover:border-edge-hover hover:bg-surface-2/60 transition-all"
+                        >
+                          <span>{preset.icon}</span>
+                          <span>{preset.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
               <p className="text-[11px] text-txt-faint mt-2 leading-relaxed">
