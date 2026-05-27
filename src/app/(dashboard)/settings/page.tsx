@@ -295,8 +295,20 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSetDefault = (id: string) => {
-    void updateProvider({ id, isDefault: true });
+  /**
+   * Flip the `isDefault` flag on a provider.
+   *
+   * Server-side semantics (see /api/providers/[id] PUT):
+   *   - `isDefault: true`   -> clears default on every other row first,
+   *                            then sets this one. Mutually exclusive.
+   *   - `isDefault: false`  -> just clears this row. The built-in
+   *                            Prometheus virtual provider auto-becomes
+   *                            default again (kalo lo punya Kiro account
+   *                            aktif), karena `hasExplicitDefault`
+   *                            jadi false di GET response.
+   */
+  const handleToggleDefault = (id: string, currentDefault: boolean) => {
+    void updateProvider({ id, isDefault: !currentDefault });
   };
 
   const handleToggleActive = (id: string, isActive: boolean) => {
@@ -632,7 +644,7 @@ curl ${baseUrl}/chat/completions \\
           ) : (
             <div className="divide-y divide-edge">
               {providers
-                .filter((p) => !p.builtin)
+                .filter((p) => !p.builtin && !p.shared)
                 .map((p) => {
                   const modelList = JSON.parse(p.models || '[]') as string[];
                   return (
@@ -660,17 +672,35 @@ curl ${baseUrl}/chat/completions \\
                           <Button onClick={() => handleRefreshModels(p.id)} variant="ghost" size="xs" title="Re-fetch models">
                             ↻ Refresh
                           </Button>
-                          {!p.isDefault && (
-                            <Button onClick={() => handleSetDefault(p.id)} variant="ghost" size="xs">
-                              Set Default
-                            </Button>
-                          )}
+                          {/*
+                            Always-visible default toggle. Click flips the
+                            flag both directions:
+                              - off -> on  : becomes the chat default,
+                                              other rows lose default
+                              - on  -> off : Prometheus virtual provider
+                                              auto-resumes default
+                            Owner-only check on user's own providers
+                            (shared:true rows hidden from this column).
+                          */}
+                          <Button
+                            onClick={() => handleToggleDefault(p.id, p.isDefault)}
+                            variant={p.isDefault ? 'primary' : 'outline'}
+                            size="xs"
+                            title={p.isDefault
+                              ? 'Currently the chat default — click to clear'
+                              : 'Click to make this the chat default'}
+                          >
+                            {p.isDefault ? '★ Default' : 'Make default'}
+                          </Button>
                           <Button
                             onClick={() => handleToggleActive(p.id, p.isActive)}
                             variant={p.isActive ? 'outline' : 'secondary'}
                             size="xs"
+                            title={p.isActive
+                              ? 'Currently active — click to disable'
+                              : 'Currently disabled — click to enable'}
                           >
-                            {p.isActive ? 'Disable' : 'Enable'}
+                            {p.isActive ? 'Active' : 'Disabled'}
                           </Button>
                           <Button onClick={() => handleDeleteProvider(p.id)} variant="danger" size="xs">
                             Delete
