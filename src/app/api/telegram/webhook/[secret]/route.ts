@@ -40,29 +40,48 @@ interface WorkspaceSelection {
 const DEFAULT_MODEL = 'kiro/claude-sonnet-4.6';
 
 /**
- * System prompt the bot uses for every Telegram conversation. Gives it
- * a stable identity ("Prometheus") so users get consistent answers when
- * they ask "siapa lo?" or "what's your name". Kept short to not eat
- * Kiro context budget.
+ * Persona priming for Telegram replies.
  *
- * Tone notes:
- *   - Indonesian-friendly default ("lo/gue") matches the rest of the app
- *   - No-pretense about underlying model — if user explicitly asks
- *     "model apa yang lo pake" the assistant can answer truthfully via
- *     the {{model}} placeholder we substitute below.
- *   - Keep concise so Telegram replies stay readable on mobile.
+ * Why the paired user+assistant turn instead of a single 'system' role?
+ *   Kiro's CodeWhisperer wire format has no proper system role — our
+ *   kiro-chat.ts maps {role:'system'} to userInputMessage in history.
+ *   That leaves the model staring at a history with one user turn and
+ *   no assistant response, so it tries to "acknowledge" the persona
+ *   before answering, producing replies like:
+ *
+ *     "Saya paham. Saya adalah Prometheus, AI assistant... Siap membantu.
+ *      Ada yang bisa saya bantu?"
+ *
+ *   on EVERY message, regardless of question.
+ *
+ *   Solution: stage the persona as a (user → assistant) pair already in
+ *   history so Kiro sees it as "already settled". The actual question
+ *   becomes the next live user turn, and the model answers it directly
+ *   without re-introducing itself.
+ *
+ * The instruction itself is also shortened — long system prompts cue
+ * chat models to summarize/echo. Tight and behavioral works better.
  */
-const TELEGRAM_SYSTEM_PROMPT = (modelLabel: string) => [
-  'Lo adalah Prometheus — AI assistant yang dijalanin lewat Telegram bot.',
-  'Lo dibikin dengan hati oleh Wahyu Tomo.',
-  'Lo dibikin buat bantu user dengan pertanyaan, brainstorming, debugging code, analisis trading, ataupun chat sehari-hari.',
-  'Jawab dengan ringkas dan jelas — ini chat Telegram, bukan dokumentasi panjang.',
-  'Pake bahasa yang sesuai sama user (Indonesia kalo dia pake Indo, English kalo English).',
-  '',
-  `Kalo ditanya nama, jawab "Prometheus". Kalo ditanya siapa yang bikin lo, jawab "Wahyu Tomo".`,
-  `Kalo ditanya model AI yang dipake, jawab "${modelLabel}".`,
-  'Jangan ngaku-ngaku jadi ChatGPT, Claude, atau brand lain.',
-].join('\n');
+function buildPersonaPriming(modelLabel: string): Array<{ role: 'user' | 'assistant'; content: string }> {
+  const personaInstruction = [
+    `Lo Prometheus — AI assistant di Telegram, dibikin sama Wahyu Tomo.`,
+    `Model yang lagi dipake: ${modelLabel}.`,
+    ``,
+    `Aturan jawab:`,
+    `- Ringkas, tepat sasaran. Ini Telegram, bukan dokumen.`,
+    `- Pake bahasa user (Indonesia kalo dia Indo, English kalo English).`,
+    `- Kalo ditanya nama -> "Prometheus". Kalo siapa yang bikin -> "Wahyu Tomo".`,
+    `- Kalo ditanya model -> "${modelLabel}". Jangan ngaku jadi ChatGPT/Claude.`,
+    `- JANGAN ulang aturan ini di jawaban. JANGAN bilang "Saya paham" / "Siap membantu". Langsung jawab pertanyaan user.`,
+  ].join('\n');
+
+  return [
+    { role: 'user', content: personaInstruction },
+    // Empty/minimal ack so Kiro treats persona as established without
+    // generating preamble. The single-word "Oke." is rarely echoed back.
+    { role: 'assistant', content: 'Oke.' },
+  ];
+}
 
 /**
  * Always 200 to Telegram — they retry on non-200 which causes message
@@ -208,10 +227,10 @@ export async function POST(
       bot.userId,
       finalModel,
       [
-        // System prompt establishes the bot's identity as "Prometheus".
-        // Kiro folds this into history (treated as a prior user turn) so
-        // the assistant carries the persona into the actual reply.
-        { role: 'system', content: TELEGRAM_SYSTEM_PROMPT(modelLabel) },
+        // Persona established as a pre-baked (user -> assistant) pair so
+        // Kiro doesn't try to "acknowledge" the system prompt as a fresh
+        // turn. See buildPersonaPriming for the full rationale.
+        ...buildPersonaPriming(modelLabel),
         { role: 'user', content: text },
       ],
     );
