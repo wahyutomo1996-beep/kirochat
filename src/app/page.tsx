@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import Link from 'next/link';
+import { BrandLogo } from '@/components/BrandLogo';
 
 /**
  * Marketing landing page.
@@ -18,16 +19,7 @@ export default function Home() {
     <div className="min-h-screen flex flex-col">
       <nav className="flex items-center justify-between px-6 py-4 border-b border-hairline bg-canvas sticky top-0 z-10">
         <div className="flex items-center gap-2.5">
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center bg-accent"
-            style={{
-              boxShadow: '0 4px 16px -4px rgba(94, 106, 210, 0.5)',
-            }}
-          >
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-          </div>
+          <BrandLogo size={32} />
           <span className="text-ink font-semibold text-lg tracking-tight">Prometheus</span>
         </div>
         <div className="flex items-center gap-3">

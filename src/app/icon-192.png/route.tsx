@@ -1,11 +1,8 @@
 /**
  * Dynamic 192×192 PNG icon, served at /icon-192.png.
  *
- * Renders a Linear-lavender square with the Prometheus "P" wordmark
- * via Next.js ImageResponse — no binary PNG assets in the repo.
- *
- * Used by manifest.ts (PWA install icon) + browsers as a favicon
- * fallback at standard Android home-screen size.
+ * Linear lavender background + white flame mark — the same artwork
+ * as components/BrandLogo so web and home-screen / APK match exactly.
  */
 
 import { ImageResponse } from 'next/og';
@@ -26,14 +23,24 @@ export async function GET() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          fontSize: 130,
-          fontWeight: 700,
-          color: '#ffffff',
-          letterSpacing: '-0.05em',
         }}
       >
-        P
+        <svg
+          width="140"
+          height="140"
+          viewBox="0 0 100 100"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M 50 8 C 32 22, 18 44, 22 64 C 25 82, 38 92, 50 92 C 62 92, 75 82, 78 64 C 82 44, 68 22, 50 8 Z"
+            fill="#ffffff"
+            opacity="0.95"
+          />
+          <path
+            d="M 50 35 C 42 45, 40 56, 44 66 C 47 74, 52 75, 55 71 C 60 64, 58 47, 50 35 Z"
+            fill="#5e6ad2"
+          />
+        </svg>
       </div>
     ),
     {

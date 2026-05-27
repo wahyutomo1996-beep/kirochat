@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { Alert } from '@/components/Alert';
+import { BrandLogo } from '@/components/BrandLogo';
 import { useRegisterMutation } from '@/lib/store/api/authApi';
 
 export default function RegisterPage() {
@@ -43,16 +44,14 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface-0 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-canvas px-4">
       <div className="w-full max-w-sm animate-fade-in">
         <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-surface-1 border border-edge mb-4">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-            </svg>
+          <div className="inline-flex items-center justify-center mb-4">
+            <BrandLogo size={56} />
           </div>
-          <h1 className="text-2xl font-semibold text-white tracking-tight">Create Account</h1>
-          <p className="text-txt-muted text-sm mt-2">Request access to Prometheus</p>
+          <h1 className="text-2xl font-semibold text-ink tracking-tight">Create Account</h1>
+          <p className="text-ink-subtle text-sm mt-2">Request access to Prometheus</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

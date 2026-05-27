@@ -1,16 +1,13 @@
 /**
  * Dynamic 512×512 PNG icon, served at /icon-512.png.
  *
- * Standard "any" purpose icon — full bleed lavender, no safe-zone
- * inset. Used for desktop install + iOS home screen + PWABuilder
- * APK packaging at the largest required size.
+ * Standard "any" purpose icon — full bleed lavender + flame mark.
+ * Used for desktop install + iOS home screen + PWABuilder APK
+ * packaging at the largest required size.
  */
 
 import { ImageResponse } from 'next/og';
 
-// Force runtime generation; @vercel/og's prerender path resolver
-// breaks on Windows directory paths containing spaces. Generated on
-// first request + cached via Cache-Control header below.
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
@@ -24,14 +21,24 @@ export async function GET() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          fontSize: 350,
-          fontWeight: 700,
-          color: '#ffffff',
-          letterSpacing: '-0.05em',
         }}
       >
-        P
+        <svg
+          width="380"
+          height="380"
+          viewBox="0 0 100 100"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M 50 8 C 32 22, 18 44, 22 64 C 25 82, 38 92, 50 92 C 62 92, 75 82, 78 64 C 82 44, 68 22, 50 8 Z"
+            fill="#ffffff"
+            opacity="0.95"
+          />
+          <path
+            d="M 50 35 C 42 45, 40 56, 44 66 C 47 74, 52 75, 55 71 C 60 64, 58 47, 50 35 Z"
+            fill="#5e6ad2"
+          />
+        </svg>
       </div>
     ),
     {

@@ -17,7 +17,7 @@
  * triggering a clean re-cache (use after major UI updates).
  */
 
-const CACHE_VERSION = 'prometheus-v1';
+const CACHE_VERSION = 'prometheus-v2-flame';
 const PRECACHE_URLS = [
   '/',
   '/login',
