@@ -33,6 +33,9 @@ export async function middleware(request: NextRequest) {
     '/api/auth/login',
     '/api/auth/register',
     '/api/health',
+    // Telegram webhook is authenticated by URL secret + X-Telegram-Bot-Api-Secret-Token
+    // header (verified inside the route). It must be reachable without our cookie.
+    '/api/telegram/webhook/',
   ];
   if (publicPaths.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
