@@ -44,12 +44,29 @@ model Provider {
   modelsLastFetched DateTime?
   isDefault   Boolean  @default(false)
   isActive    Boolean  @default(true)
+  /// When true, this provider's `sharedModels` are visible + dispatchable
+  /// to ALL approved users (not just `userId`). The owner's apiKey is
+  /// used for upstream auth, so the owner pays for any quota burned by
+  /// other users.
+  ///
+  /// Use case: admin shares the free tier of an external provider
+  /// (e.g. Genfity's gpt-5.5:free + claude-opus-4.6:free) with all
+  /// registered users, no per-user signup required. Paid models stay
+  /// private to the owner.
+  isShared    Boolean  @default(false)
+  /// JSON-encoded array of model ids that the share applies to.
+  /// Empty array = nothing is shared (effective NOT shared even if
+  /// isShared=true). When non-empty + isShared=true, only these models
+  /// appear in other users' provider catalog. The owner still sees
+  /// the full `models` list.
+  sharedModels String  @default("[]")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   usages      Usage[]
 
   @@index([userId])
+  @@index([isShared])
 }
 
 model KiroAccount {

@@ -65,6 +65,7 @@ interface VisionRouteDecision {
 async function resolveProvider(
   userId: string,
   providerId: string,
+  requestedModel?: string,
 ): Promise<ResolvedProvider | { error: string; status: number }> {
   if (providerId === PROMETHEUS_PROVIDER_ID) {
     const activeAccountCount = await prisma.kiroAccount.count({
@@ -80,23 +81,64 @@ async function resolveProvider(
     return { row: null, name: 'Prometheus', isBuiltin: true };
   }
 
-  const row = await prisma.provider.findFirst({
+  // 1. Try the user's own provider first (full model access).
+  const own = await prisma.provider.findFirst({
     where: { id: providerId, userId, isActive: true },
   });
+  if (own) {
+    return {
+      row: {
+        id: own.id,
+        name: own.name,
+        type: own.type,
+        baseUrl: own.baseUrl,
+        apiKey: own.apiKey,
+      },
+      name: own.name,
+      isBuiltin: false,
+    };
+  }
 
-  if (!row) return { error: 'Provider not found or inactive', status: 404 };
-
-  return {
-    row: {
-      id: row.id,
-      name: row.name,
-      type: row.type,
-      baseUrl: row.baseUrl,
-      apiKey: row.apiKey,
+  // 2. Fall back to a shared provider owned by another user (e.g. admin's
+  //    shared free tier). The requested model MUST be in the sharedModels
+  //    whitelist — otherwise the user could bypass the share boundary by
+  //    sending the provider's id with any paid model id.
+  const shared = await prisma.provider.findFirst({
+    where: {
+      id: providerId,
+      isActive: true,
+      isShared: true,
+      AND: [
+        { NOT: { userId } },
+        { NOT: { sharedModels: '[]' } },
+      ],
     },
-    name: row.name,
-    isBuiltin: false,
-  };
+  });
+  if (shared) {
+    if (requestedModel) {
+      let allowed: string[] = [];
+      try { allowed = JSON.parse(shared.sharedModels || '[]'); } catch {}
+      if (!allowed.includes(requestedModel)) {
+        return {
+          error: `Model ${requestedModel} is not part of the shared free tier on ${shared.name}. Pick from: ${allowed.join(', ')}`,
+          status: 403,
+        };
+      }
+    }
+    return {
+      row: {
+        id: shared.id,
+        name: shared.name,
+        type: shared.type,
+        baseUrl: shared.baseUrl,
+        apiKey: shared.apiKey, // owner's encrypted key — used for upstream
+      },
+      name: `${shared.name} (Shared)`,
+      isBuiltin: false,
+    };
+  }
+
+  return { error: 'Provider not found or inactive', status: 404 };
 }
 
 /**
@@ -461,12 +503,15 @@ export async function POST(request: NextRequest) {
       comboName = combo.name;
 
       // Resolve each step's provider once up-front so we don't re-query DB
-      // per fall-through attempt.
+      // per fall-through attempt. Pass step.model so shared-provider
+      // whitelist gets enforced (a combo can mix free shared models
+      // with the user's own paid models — each step validated separately).
       const resolved: Array<{ provider: ResolvedProvider; model: string }> = [];
       for (const step of combo.steps) {
-        const r = await resolveProvider(userId, step.providerId);
+        const r = await resolveProvider(userId, step.providerId, step.model);
         if ('error' in r) {
-          // Skip steps whose provider was deleted/disabled, but log
+          // Skip steps whose provider was deleted/disabled or whose
+          // model isn't on the shared whitelist for this user.
           continue;
         }
         resolved.push({ provider: r, model: step.model });
@@ -489,7 +534,9 @@ export async function POST(request: NextRequest) {
     // ---- Resolve selected provider (non-combo path) ----
     let decision: VisionRouteDecision | null = null;
     if (!comboSteps) {
-      const selectedResult = await resolveProvider(userId, providerId);
+      // Pass `model` so shared providers can enforce their model whitelist
+      // (e.g. admin's Genfity allows :free models only for non-owners).
+      const selectedResult = await resolveProvider(userId, providerId, model);
       if ('error' in selectedResult) {
         return NextResponse.json({ error: selectedResult.error }, { status: selectedResult.status });
       }

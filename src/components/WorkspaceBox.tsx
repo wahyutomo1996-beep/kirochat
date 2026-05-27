@@ -72,11 +72,17 @@ export type WorkspaceSelection =
  * Provider catalog passed in by the parent. One entry per provider
  * available to this user — '__prometheus__' (Kiro pool) is always
  * present, plus zero or more external providers from Settings.
+ *
+ * `shared: true` marks providers the user doesn't own (e.g. admin's
+ * shared free tier). UI surfaces a badge so users know this catalog's
+ * models hit someone else's quota and may have a limited model list.
  */
 export interface ProviderCatalog {
   id: string;              // '__prometheus__' or DB provider id
   name: string;            // 'Prometheus', 'Genfity', etc.
   models: WorkspaceModelLike[];
+  /** True iff catalog is from a shared provider (not user-owned) */
+  shared?: boolean;
 }
 
 interface Props {
@@ -316,6 +322,7 @@ export function WorkspaceBox({
                 <div className="flex flex-wrap gap-1">
                   {providers.map((p) => {
                     const isActiveProvider = selection.providerId === p.id;
+                    const isShared = p.shared === true;
                     return (
                       <button
                         key={p.id}
@@ -333,14 +340,31 @@ export function WorkspaceBox({
                           }
                         }}
                         disabled={p.models.length === 0}
-                        className={`px-2 py-0.5 text-[11px] font-medium rounded-full border transition-all ${
+                        className={`px-2 py-0.5 text-[11px] font-medium rounded-full border transition-all inline-flex items-center gap-1 ${
                           isActiveProvider
                             ? 'bg-accent text-white border-accent'
                             : 'bg-surface-2 text-ink-subtle border-hairline hover:text-ink hover:border-hairline-strong'
                         } disabled:opacity-40 disabled:cursor-not-allowed`}
-                        title={p.models.length === 0 ? 'No models — refresh in Settings' : `${p.models.length} models`}
+                        title={
+                          p.models.length === 0
+                            ? 'No models — refresh in Settings'
+                            : isShared
+                              ? `Shared free tier — ${p.models.length} models`
+                              : `${p.models.length} models`
+                        }
                       >
-                        {p.name}
+                        <span>{p.name}</span>
+                        {isShared && (
+                          <span
+                            className={`text-[9px] px-1 py-px rounded font-semibold uppercase tracking-wide ${
+                              isActiveProvider
+                                ? 'bg-white/20 text-white'
+                                : 'bg-success/15 text-success'
+                            }`}
+                          >
+                            free
+                          </span>
+                        )}
                       </button>
                     );
                   })}

@@ -9,7 +9,16 @@ export async function PUT(
 ) {
   try {
     const session = await requireAuth();
-    const { name, type, baseUrl, apiKey, isDefault, isActive } = await request.json();
+    const {
+      name,
+      type,
+      baseUrl,
+      apiKey,
+      isDefault,
+      isActive,
+      isShared,
+      sharedModels,
+    } = await request.json();
 
     const provider = await prisma.provider.findFirst({
       where: { id: params.id, userId: session.userId },
@@ -26,6 +35,37 @@ export async function PUT(
     if (apiKey !== undefined) updateData.apiKey = encrypt(apiKey);
     if (isActive !== undefined) updateData.isActive = isActive;
 
+    /*
+     * Sharing controls — only the provider owner can flip these flags.
+     * The findFirst above already gates by userId, so we know the
+     * caller owns the row. Validation:
+     *   - isShared: boolean toggle
+     *   - sharedModels: array of model id strings, must each appear in
+     *     the provider's `models` JSON (can't share what you haven't
+     *     fetched yet)
+     */
+    if (isShared !== undefined) {
+      updateData.isShared = Boolean(isShared);
+    }
+    if (sharedModels !== undefined) {
+      if (!Array.isArray(sharedModels)) {
+        return NextResponse.json(
+          { error: 'sharedModels must be an array of model id strings' },
+          { status: 400 },
+        );
+      }
+      let ownModels: string[] = [];
+      try { ownModels = JSON.parse(provider.models || '[]'); } catch {}
+      const invalid = sharedModels.filter((m: unknown) => typeof m !== 'string' || !ownModels.includes(m));
+      if (invalid.length > 0) {
+        return NextResponse.json(
+          { error: `sharedModels contains entries not present in provider catalog: ${invalid.join(', ')}` },
+          { status: 400 },
+        );
+      }
+      updateData.sharedModels = JSON.stringify(sharedModels);
+    }
+
     if (isDefault === true) {
       // Unset other defaults
       await prisma.provider.updateMany({
@@ -34,8 +74,6 @@ export async function PUT(
       });
       updateData.isDefault = true;
     } else if (isDefault === false) {
-      // Explicitly clear default flag (so the built-in Prometheus virtual
-      // provider can take over as default)
       updateData.isDefault = false;
     }
 
@@ -52,6 +90,8 @@ export async function PUT(
         baseUrl: updated.baseUrl,
         isDefault: updated.isDefault,
         isActive: updated.isActive,
+        isShared: updated.isShared,
+        sharedModels: updated.sharedModels,
       },
     });
   } catch (error: unknown) {

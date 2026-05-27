@@ -81,6 +81,10 @@ interface Provider {
   isActive: boolean;
   builtin?: boolean;
   accountCount?: number;
+  /** True when this is a shared provider from another user (e.g. admin
+   *  shared free tier). The user can dispatch to it but only against the
+   *  whitelisted models surfaced in the `models` JSON. */
+  shared?: boolean;
 }
 
 interface ChatCombo {
@@ -377,7 +381,9 @@ export default function ChatPage() {
       });
     }
 
-    // 2. External providers — Genfity, OpenRouter, etc.
+    // 2. External providers — Genfity, OpenRouter, etc. Includes shared
+    //    providers from other users (e.g. admin's free tier) — those have
+    //    `shared: true` so the UI can render a "free" badge.
     for (const p of providers) {
       if (p.id === PROMETHEUS_PROVIDER_ID) continue; // already added
       if (!p.isActive) continue;
@@ -387,6 +393,7 @@ export default function ChatPage() {
       out.push({
         id: p.id,
         name: p.name,
+        shared: p.shared === true,
         models: modelIds.map((id) => ({
           id,
           displayName: formatModelDisplay(id),

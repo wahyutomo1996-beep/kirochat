@@ -41,7 +41,8 @@ function buildPrometheusVirtualProvider(activeAccountCount: number) {
 export async function GET() {
   try {
     const session = await requireAuth();
-    const [providers, activeAccountCount] = await Promise.all([
+    const [ownProviders, sharedProviders, activeAccountCount] = await Promise.all([
+      // 1. User's own providers — full model list visible.
       prisma.provider.findMany({
         where: { userId: session.userId },
         select: {
@@ -53,6 +54,33 @@ export async function GET() {
           modelsLastFetched: true,
           isDefault: true,
           isActive: true,
+          isShared: true,
+          sharedModels: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      // 2. Other admins' shared providers — only the whitelisted models
+      //    bleed through. Owner's apiKey + userId never leaves the server.
+      //    Two NOT clauses combined via AND so we exclude both:
+      //      - the user's own providers (already in `ownProviders`)
+      //      - rows with empty sharedModels JSON (effective unshared)
+      prisma.provider.findMany({
+        where: {
+          isActive: true,
+          isShared: true,
+          AND: [
+            { NOT: { userId: session.userId } },
+            { NOT: { sharedModels: '[]' } },
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          baseUrl: true,
+          sharedModels: true,
+          isActive: true,
           createdAt: true,
         },
         orderBy: { createdAt: 'desc' },
@@ -62,14 +90,30 @@ export async function GET() {
       }),
     ]);
 
-    // If user has at least one active Kiro account, the built-in provider
-    // is the default unless an explicit DB provider is marked default.
-    const hasExplicitDefault = providers.some(p => p.isDefault);
+    const hasExplicitDefault = ownProviders.some(p => p.isDefault);
     const builtin = buildPrometheusVirtualProvider(activeAccountCount);
     if (hasExplicitDefault) builtin.isDefault = false;
 
+    // Project the shared providers into the same shape as own providers
+    // so the UI catalog can treat them uniformly. The `shared: true`
+    // flag lets the UI render a "Shared" badge.
+    const sharedProjected = sharedProviders.map(p => ({
+      id: p.id,
+      name: p.name,
+      type: p.type,
+      baseUrl: p.baseUrl,
+      models: p.sharedModels, // ONLY whitelisted models bleed through
+      modelsLastFetched: null,
+      isDefault: false,
+      isActive: true,
+      isShared: true,
+      sharedModels: p.sharedModels,
+      createdAt: p.createdAt,
+      shared: true, // marker for UI rendering
+    }));
+
     return NextResponse.json({
-      providers: [builtin, ...providers],
+      providers: [builtin, ...ownProviders, ...sharedProjected],
       activeKiroAccounts: activeAccountCount,
     });
   } catch (error: unknown) {
