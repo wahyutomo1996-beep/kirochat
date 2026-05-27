@@ -36,6 +36,15 @@ export async function middleware(request: NextRequest) {
     // Telegram webhook is authenticated by URL secret + X-Telegram-Bot-Api-Secret-Token
     // header (verified inside the route). It must be reachable without our cookie.
     '/api/telegram/webhook/',
+    // PWA install assets — must be reachable without auth so the
+    // browser can fetch them BEFORE the user logs in (otherwise the
+    // install prompt never appears + iOS Add-to-Home-Screen breaks).
+    '/manifest.webmanifest',
+    '/icon-192.png',
+    '/icon-512.png',
+    '/icon-maskable-512.png',
+    '/apple-icon.png',
+    '/sw.js',
   ];
   if (publicPaths.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
