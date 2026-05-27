@@ -30,6 +30,7 @@ model User {
   usages              Usage[]
   kiroAccounts        KiroAccount[]
   combos              Combo[]
+  telegramBot         TelegramBot?
 }
 
 model Provider {
@@ -182,4 +183,43 @@ model Combo {
 
   @@unique([userId, slug])
   @@index([userId])
+}
+
+/// Telegram bot integration. One bot per user. The bot accepts messages
+/// from a whitelisted set of Telegram user IDs and proxies them through
+/// the user's existing Kiro pool / chat dispatch infrastructure.
+///
+/// Auth model: Telegram -> our server uses URL-embedded webhook secret
+/// (random 32-byte hex) so anyone with the URL can post (Telegram needs
+/// it). Plus we verify `from.id` is in `allowedUserIds` before processing.
+///
+/// The bot token is encrypted at rest with the same key used for Kiro
+/// refresh tokens (lib/encryption). Plain token never leaves Settings UI.
+model TelegramBot {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  /// Encrypted bot token (e.g. "1234:ABCdef..."). Never returned plaintext.
+  token           String
+  /// Bot's Telegram username (without @), captured from getMe at save time.
+  /// Cached for display; not used for auth.
+  botUsername     String?
+  /// Comma-separated whitelist of Telegram user IDs (numbers as strings).
+  /// e.g. "123456789,987654321". Empty = locked (no one can use the bot).
+  allowedUserIds  String   @default("")
+  /// Random 32-byte hex secret embedded in the webhook URL. We rotate this
+  /// when the user re-saves config so leaked URLs become inert.
+  webhookSecret   String   @unique
+  /// Default workspace selection passed to the chat dispatcher when a
+  /// Telegram user sends a message. JSON: { mode: 'combo'|'model', value: string }.
+  /// Empty string = use general workspace's default fallback.
+  defaultSelection String  @default("")
+  /// True when last setWebhook call to Telegram succeeded.
+  webhookActive   Boolean  @default(false)
+  /// Last error from Telegram API (set + register webhook + sendMessage).
+  /// Surfaced in Settings UI so user can debug rejected tokens.
+  lastError       String?
+  lastErrorAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

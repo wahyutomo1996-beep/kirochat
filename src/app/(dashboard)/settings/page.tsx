@@ -24,6 +24,7 @@ import { Badge } from '@/components/Badge';
 import { LoadingState } from '@/components/LoadingState';
 import { TokenDetector } from '@/components/TokenDetector';
 import { ComboPanel } from '@/components/ComboPanel';
+import { TelegramPanel } from '@/components/TelegramPanel';
 import { KiroUsageTracker } from '@/components/KiroUsageTracker';
 import { useAppDispatch } from '@/lib/store/hooks';
 import { showToast } from '@/lib/store/slices/uiSlice';
@@ -581,6 +582,9 @@ curl ${baseUrl}/chat/completions \\
 
         {/* Combos - ordered chains of (provider, model) with auto-fallback */}
         <ComboPanel providers={providers} />
+
+        {/* Telegram bot integration — chat with the Kiro pool from Telegram */}
+        <TelegramPanel />
 
         {/* Provider List */}
         <div className="bg-surface-1 border border-edge rounded-xl overflow-hidden mb-6 animate-slide-up">
