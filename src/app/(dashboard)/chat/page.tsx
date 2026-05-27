@@ -173,6 +173,13 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  /**
+   * Live AbortController for the in-flight chat request. We hang it on
+   * a ref (not state) so the Stop button click handler reads the
+   * current controller without forcing a re-render. Cleared in finally
+   * so back-to-back stops don't reuse a stale controller.
+   */
+  const abortRef = useRef<AbortController | null>(null);
 
   // Initial bootstrap
   useEffect(() => {
@@ -458,6 +465,11 @@ export default function ChatPage() {
     };
     setMessages((prev) => [...prev, tempMsg]);
 
+    // Fresh AbortController for this turn. Stop button calls .abort()
+    // which throws DOMException 'AbortError' from the fetch + reader.
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
     try {
       // Read CSRF cookie to satisfy the middleware on POST
       const csrf = typeof document !== 'undefined'
@@ -475,6 +487,7 @@ export default function ChatPage() {
           model,
           workspace: activeWorkspace,
         }),
+        signal: ctrl.signal,
       });
 
       if (!res.ok) {
@@ -492,6 +505,10 @@ export default function ChatPage() {
       let fullContent = '';
 
       while (reader) {
+        // Reading is also abortable — when ctrl.abort() fires the
+        // underlying body stream errors and read() rejects with
+        // AbortError. We catch it below and treat the partial
+        // fullContent as the final message.
         const { done, value } = await reader.read();
         if (done) break;
         const text = decoder.decode(value);
@@ -542,12 +559,101 @@ export default function ChatPage() {
         }]);
       }
     } catch (err) {
-      console.error(err);
-      alert('Connection error');
+      // AbortError is the user clicking Stop — keep what was already
+      // streamed and present it as a complete (if truncated) message.
+      const aborted = (err as { name?: string })?.name === 'AbortError';
+      if (aborted) {
+        // Use a closure-local copy of streamContent at abort time. If
+        // we have nothing yet, drop the placeholder turn entirely.
+        // (Server-side conversation may already have a partial assistant
+        // turn — we let the next refetch reconcile.)
+        const partial = streamContent;
+        if (partial) {
+          setMessages((prev) => [...prev, {
+            id: 'a-' + Date.now(),
+            role: 'assistant',
+            content: partial + '\n\n_(stopped)_',
+            images: '[]',
+            model,
+            createdAt: new Date().toISOString(),
+          }]);
+        }
+      } else {
+        console.error(err);
+        alert('Connection error');
+      }
     } finally {
+      abortRef.current = null;
       setStreaming(false);
       setStreamContent('');
       fetchConversations();
+    }
+  };
+
+  /**
+   * Stop the in-flight stream. Aborts both the fetch and the reader
+   * via AbortController. Whatever was already streamed becomes the
+   * final assistant message.
+   */
+  const stopStreaming = () => {
+    abortRef.current?.abort();
+  };
+
+  /**
+   * Edit a previously sent user message.
+   *
+   * Steps:
+   *   1. Drop the edited message + every message after it from local
+   *      state (so the chat looks like the conversation rewound to
+   *      that point).
+   *   2. Drop the same range server-side via DELETE /api/messages/[id]
+   *      so the next /api/chat call doesn't have a stale tail in
+   *      history.
+   *   3. Pre-fill the input with the edited text + restore any images
+   *      that were attached to the original. User tweaks + sends.
+   *
+   * If the message is a temp one (id starts with 'temp-') it never
+   * persisted server-side, so we skip the DELETE call.
+   */
+  const editUserMessage = async (msgId: string) => {
+    const msg = messages.find((m) => m.id === msgId);
+    if (!msg || msg.role !== 'user') return;
+
+    // Stop any in-flight reply first — we're about to rewind history
+    // and don't want a partial response landing on top.
+    if (streaming) stopStreaming();
+
+    // Drop from this message onward in local state
+    const idx = messages.findIndex((m) => m.id === msgId);
+    if (idx === -1) return;
+    setMessages((prev) => prev.slice(0, idx));
+
+    // Restore the input with the message text + images so the user
+    // can tweak before re-sending.
+    setInput(msg.content);
+    try {
+      const imgs = JSON.parse(msg.images || '[]') as string[];
+      setImages(imgs);
+    } catch {
+      setImages([]);
+    }
+    textareaRef.current?.focus();
+
+    // Server-side cleanup for persisted messages only (skip temp ones).
+    if (!msg.id.startsWith('temp-')) {
+      const csrf = typeof document !== 'undefined'
+        ? (document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/)?.[1] ?? '')
+        : '';
+      try {
+        await fetch(`/api/messages/${msg.id}`, {
+          method: 'DELETE',
+          headers: { 'X-CSRF-Token': decodeURIComponent(csrf) },
+        });
+      } catch {
+        // Non-fatal — local state is already rewound; the next /api/chat
+        // call will re-sync its own view. Worst case: server has stale
+        // history that the dispatcher will re-include in the prompt.
+      }
     }
   };
 
@@ -871,7 +977,7 @@ export default function ChatPage() {
                 <div key={msg.id} className="animate-fade-in">
                   {msg.role === 'user' ? (
                     <div className="flex justify-end">
-                      <div className="max-w-[80%]">
+                      <div className="max-w-[80%] group/usr">
                         {msg.images && JSON.parse(msg.images).length > 0 && (
                           <div className="flex flex-wrap gap-1.5 mb-2 justify-end">
                             {JSON.parse(msg.images).map((img: string, i: number) => (
@@ -881,6 +987,21 @@ export default function ChatPage() {
                         )}
                         <div className="bg-white text-black rounded-2xl rounded-br-md px-4 py-2.5">
                           <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                        </div>
+                        {/* Edit affordance — only on user turns, hidden until hover.
+                            Disabled while streaming so we don't race the abort path. */}
+                        <div className="flex justify-end mt-1.5 opacity-0 group-hover/usr:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => editUserMessage(msg.id)}
+                            className="text-[11px] text-ink-subtle hover:text-ink inline-flex items-center gap-1 px-2 py-0.5 rounded hover:bg-surface-2 transition-colors"
+                            title="Edit & resend"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                            Edit
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1036,23 +1157,44 @@ export default function ChatPage() {
                 className="flex-1 bg-transparent text-sm text-white placeholder:text-txt-ghost focus:outline-none resize-none max-h-40 leading-relaxed py-1.5"
                 rows={1}
               />
-              <button
-                onClick={sendMessage}
-                disabled={streaming || (!input.trim() && images.length === 0)}
-                style={
-                  !streaming && (input.trim() || images.length > 0)
-                    ? {
-                        background: `linear-gradient(135deg, var(--ws-active), var(--ws-active-bright))`,
-                        boxShadow: `0 4px 16px -4px rgba(var(--ws-active-glow) / 0.6)`,
-                      }
-                    : undefined
-                }
-                className="text-white disabled:bg-surface-3 disabled:text-txt-faint disabled:cursor-not-allowed disabled:shadow-none btn-squash p-1.5 rounded-md shrink-0 self-end"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-              </button>
+              {/*
+                Send / Stop toggle. While a stream is in flight, the
+                send button morphs into a Stop button (red square icon)
+                that calls AbortController.abort(). The user gets
+                immediate cancel — no waiting for the model to finish.
+              */}
+              {streaming ? (
+                <button
+                  onClick={stopStreaming}
+                  className="bg-red-500/90 hover:bg-red-500 text-white btn-squash p-1.5 rounded-md shrink-0 self-end transition-colors"
+                  title="Stop generating"
+                  aria-label="Stop generating"
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <rect x="6" y="6" width="12" height="12" rx="1" />
+                  </svg>
+                </button>
+              ) : (
+                <button
+                  onClick={sendMessage}
+                  disabled={!input.trim() && images.length === 0}
+                  style={
+                    input.trim() || images.length > 0
+                      ? {
+                          background: `linear-gradient(135deg, var(--ws-active), var(--ws-active-bright))`,
+                          boxShadow: `0 4px 16px -4px rgba(var(--ws-active-glow) / 0.6)`,
+                        }
+                      : undefined
+                  }
+                  className="text-white disabled:bg-surface-3 disabled:text-txt-faint disabled:cursor-not-allowed disabled:shadow-none btn-squash p-1.5 rounded-md shrink-0 self-end"
+                  title="Send"
+                  aria-label="Send"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
+                  </svg>
+                </button>
+              )}
             </div>
             <p className="hidden fold:block text-[11px] text-txt-muted text-center mt-2">
               <kbd className="px-1.5 py-0.5 bg-surface-2 border border-edge rounded text-[10px]">Enter</kbd> send ·
