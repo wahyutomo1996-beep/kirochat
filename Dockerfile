@@ -25,6 +25,10 @@ RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+# Static assets in public/ are NOT auto-included by Next.js standalone
+# output (https://nextjs.org/docs/app/api-reference/next-config-js/output#caveats).
+# Without this, /sw.js + any other public asset returns 404.
+COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
