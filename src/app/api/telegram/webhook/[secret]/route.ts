@@ -24,6 +24,7 @@ import { generateKiroChat } from '@/lib/kiro-chat';
 import { findModel } from '@/lib/models';
 import { recordKiroUsage } from '@/lib/kiro-pool';
 import { resolveCombo } from '@/lib/combo-dispatch';
+import { formatModelDisplay } from '@/lib/format-model';
 import {
   sendMessage,
   sendTyping,
@@ -37,6 +38,29 @@ interface WorkspaceSelection {
 }
 
 const DEFAULT_MODEL = 'kiro/claude-sonnet-4.6';
+
+/**
+ * System prompt the bot uses for every Telegram conversation. Gives it
+ * a stable identity ("Prometheus") so users get consistent answers when
+ * they ask "siapa lo?" or "what's your name". Kept short to not eat
+ * Kiro context budget.
+ *
+ * Tone notes:
+ *   - Indonesian-friendly default ("lo/gue") matches the rest of the app
+ *   - No-pretense about underlying model — if user explicitly asks
+ *     "model apa yang lo pake" the assistant can answer truthfully via
+ *     the {{model}} placeholder we substitute below.
+ *   - Keep concise so Telegram replies stay readable on mobile.
+ */
+const TELEGRAM_SYSTEM_PROMPT = (modelLabel: string) => [
+  'Lo adalah Prometheus — AI assistant yang dijalanin lewat Telegram bot.',
+  'Lo dibikin buat bantu user dengan pertanyaan, brainstorming, debugging code, analisis trading, ataupun chat sehari-hari.',
+  'Jawab dengan ringkas dan jelas — ini chat Telegram, bukan dokumentasi panjang.',
+  'Pake bahasa yang sesuai sama user (Indonesia kalo dia pake Indo, English kalo English).',
+  '',
+  `Kalo ditanya nama, jawab "Prometheus". Kalo ditanya model AI yang dipake, jawab "${modelLabel}".`,
+  'Jangan ngaku-ngaku jadi ChatGPT, Claude, atau brand lain.',
+].join('\n');
 
 /**
  * Always 200 to Telegram — they retry on non-200 which causes message
@@ -150,14 +174,16 @@ export async function POST(
   // Slash-command shortcut: /start, /help — friendly intros so users
   // know what they're talking to.
   if (text === '/start' || text === '/help') {
-    const userLabel = bot.botUsername ? `@${bot.botUsername}` : 'this bot';
+    const selectionForHelp = parseSelection(bot.defaultSelection);
+    const modelForHelp = await resolveModel(bot.userId, selectionForHelp);
+    const modelLabel = formatModelDisplay(modelForHelp);
     await sendMessage(
       plainToken,
       message.chat.id,
-      `Halo, lo lagi chat sama ${userLabel} (Prometheus).\n\n` +
-      `Kirim pesan apa aja, gw forward ke Kiro pool. Image belum supported di sini, ` +
-      `pake web aja kalo butuh vision (https://152-42-216-29.sslip.io/chat).\n\n` +
-      `Default model: ${bot.defaultSelection ? 'configured in Settings' : DEFAULT_MODEL}`,
+      `Halo, gw Prometheus — AI assistant yang lo akses lewat Telegram.\n\n` +
+      `Kirim pesan apa aja: pertanyaan, brainstorming, code, analisa trading, atau chat biasa.\n\n` +
+      `Default model: ${modelLabel}\n` +
+      `Image belum support disini, pake web buat vision: https://152-42-216-29.sslip.io/chat`,
       { replyToMessageId: message.message_id },
     );
     return ack();
@@ -172,13 +198,20 @@ export async function POST(
   // Validate the model exists in our catalog. If not, fall back.
   const found = findModel(model);
   const finalModel = found ? model : DEFAULT_MODEL;
+  const modelLabel = formatModelDisplay(finalModel);
 
   const startTime = Date.now();
   try {
     const result = await generateKiroChat(
       bot.userId,
       finalModel,
-      [{ role: 'user', content: text }],
+      [
+        // System prompt establishes the bot's identity as "Prometheus".
+        // Kiro folds this into history (treated as a prior user turn) so
+        // the assistant carries the persona into the actual reply.
+        { role: 'system', content: TELEGRAM_SYSTEM_PROMPT(modelLabel) },
+        { role: 'user', content: text },
+      ],
     );
 
     const reply = result.content?.trim() || '(empty reply from model)';
