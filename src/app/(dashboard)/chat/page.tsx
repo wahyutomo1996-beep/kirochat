@@ -1,16 +1,17 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/Button';
 import { LoadingState } from '@/components/LoadingState';
-import { WorkspaceBox, type WorkspaceSelection, type WorkspaceModelLike } from '@/components/WorkspaceBox';
+import { WorkspaceBox, type WorkspaceSelection, type WorkspaceModelLike, type ProviderCatalog } from '@/components/WorkspaceBox';
 import { UserPill } from '@/components/UserPill';
 import { isKiroBacked, pickVisionFallback, type ProviderLike } from '@/lib/vision';
 import { WORKSPACES, findWorkspace, normalizeWorkspaceId } from '@/lib/workspaces';
 import { formatModelDisplay } from '@/lib/format-model';
+import { PROMETHEUS_PROVIDER_ID } from '@/lib/constants';
 
 /*
  * Side panels are workspace-specific and lazy-loaded — no need to ship
@@ -87,11 +88,12 @@ interface ChatCombo {
 
 /**
  * localStorage key for per-workspace selection (combo or model).
- * Bumped to v2 since the schema changed from `Record<string,string>` to
- * `Record<string, WorkspaceSelection>` — old v1 data is silently dropped
- * via the safety check in loadWorkspaceSelections.
+ * v2 -> v3: Selection.model now carries `providerId` so we can route
+ * "Claude Haiku 4.5 from Genfity" vs "Claude Haiku 4.5 from Kiro pool"
+ * unambiguously. Old v2 entries (model mode without providerId) are
+ * silently dropped; user re-picks once.
  */
-const WORKSPACE_SELECTION_KEY = 'prometheus.workspace.selection.v2';
+const WORKSPACE_SELECTION_KEY = 'prometheus.workspace.selection.v3';
 
 /** Read persisted per-workspace selections from localStorage */
 function loadWorkspaceSelections(): Record<string, WorkspaceSelection> {
@@ -103,13 +105,16 @@ function loadWorkspaceSelections(): Record<string, WorkspaceSelection> {
     if (parsed && typeof parsed === 'object') {
       const out: Record<string, WorkspaceSelection> = {};
       for (const [k, v] of Object.entries(parsed)) {
-        if (
-          v && typeof v === 'object' &&
-          'mode' in v && 'value' in v &&
-          (v.mode === 'combo' || v.mode === 'model') &&
-          typeof v.value === 'string'
+        if (!v || typeof v !== 'object') continue;
+        const sel = v as Record<string, unknown>;
+        if (sel.mode === 'combo' && typeof sel.value === 'string') {
+          out[k] = { mode: 'combo', value: sel.value };
+        } else if (
+          sel.mode === 'model' &&
+          typeof sel.value === 'string' &&
+          typeof sel.providerId === 'string'
         ) {
-          out[k] = v as WorkspaceSelection;
+          out[k] = { mode: 'model', providerId: sel.providerId, value: sel.value };
         }
       }
       return out;
@@ -278,7 +283,10 @@ export default function ChatPage() {
    * Resolve the (providerId, model) to send to /api/chat for a workspace.
    *
    * Priority:
-   *   1. User selection mode 'model' -> raw model via Prometheus pool
+   *   1. User selection mode 'model' -> dispatch via the picked provider
+   *      ('__prometheus__' for Kiro pool, or DB id for Genfity/etc).
+   *      This is the line that fixes the 'Genfity ga kebaca' bug —
+   *      previously we always routed to '__prometheus__'.
    *   2. User selection mode 'combo' -> resolved combo (chained fallback)
    *   3. Workspace's default combo if user has it instantiated
    *   4. First combo matching the workspace category
@@ -290,14 +298,15 @@ export default function ChatPage() {
     (workspaceId: string): { providerId: string; model: string } => {
       const ws = findWorkspace(workspaceId);
       if (!ws) {
-        return { providerId: '__prometheus__', model: 'kiro/claude-sonnet-4.6' };
+        return { providerId: PROMETHEUS_PROVIDER_ID, model: 'kiro/claude-sonnet-4.6' };
       }
 
       // 1+2. User explicit override (combo or model)
       const sel = workspaceSelections[workspaceId];
       if (sel) {
         if (sel.mode === 'model' && sel.value) {
-          return { providerId: '__prometheus__', model: sel.value };
+          // Honor the picked provider — this is the bug fix.
+          return { providerId: sel.providerId || PROMETHEUS_PROVIDER_ID, model: sel.value };
         }
         if (sel.mode === 'combo' && sel.value) {
           const found = combos.find((c) => c.slug === sel.value);
@@ -314,7 +323,7 @@ export default function ChatPage() {
       if (matchingCategory) return { providerId: 'combo', model: matchingCategory.slug };
 
       // 5. Raw built-in fallback model
-      return { providerId: '__prometheus__', model: ws.fallbackModel };
+      return { providerId: PROMETHEUS_PROVIDER_ID, model: ws.fallbackModel };
     },
     [combos, workspaceSelections],
   );
@@ -328,23 +337,85 @@ export default function ChatPage() {
   );
 
   /**
+   * Build per-provider model catalogs for the WorkspaceBox picker.
+   *
+   * Combines:
+   *   - Prometheus (built-in Kiro pool) — populated from /api/models
+   *   - Each external provider from /api/providers — its own model list
+   *     parsed from the JSON-encoded `models` column
+   *
+   * Each catalog renders as a chip in the picker; clicking a chip
+   * filters the dropdown to just that provider's models. Memoized so
+   * the WorkspaceBox doesn't re-render on every keystroke.
+   *
+   * Skips providers with zero models so empty chips don't clutter the UI.
+   */
+  const providerCatalogs = useMemo<ProviderCatalog[]>(() => {
+    const out: ProviderCatalog[] = [];
+
+    // 1. Prometheus pool — always first when models are available
+    if (models.length > 0) {
+      out.push({
+        id: PROMETHEUS_PROVIDER_ID,
+        name: 'Prometheus',
+        models,
+      });
+    }
+
+    // 2. External providers — Genfity, OpenRouter, etc.
+    for (const p of providers) {
+      if (p.id === PROMETHEUS_PROVIDER_ID) continue; // already added
+      if (!p.isActive) continue;
+      let modelIds: string[] = [];
+      try { modelIds = JSON.parse(p.models || '[]'); } catch { modelIds = []; }
+      if (modelIds.length === 0) continue;
+      out.push({
+        id: p.id,
+        name: p.name,
+        models: modelIds.map((id) => ({
+          id,
+          displayName: formatModelDisplay(id),
+        })),
+      });
+    }
+
+    return out;
+  }, [models, providers]);
+
+  /**
    * Compute the effective selection to display in WorkspaceBox.
    * Falls back through the same priority as resolveWorkspaceModel so the
    * UI always shows something useful, even when the user hasn't picked
    * anything explicitly yet.
+   *
+   * Also self-heals stale selections: if the user picked a model from a
+   * provider that's since been deleted/disabled (its id no longer
+   * appears in providerCatalogs), we fall back to the workspace default
+   * instead of trying to dispatch to a phantom provider.
    */
   const effectiveSelection = useCallback(
     (workspaceId: string): WorkspaceSelection => {
       const sel = workspaceSelections[workspaceId];
-      if (sel) return sel;
       const ws = findWorkspace(workspaceId);
-      if (!ws) return { mode: 'model', value: 'kiro/claude-sonnet-4.6' };
+      const fallbackModel = ws?.fallbackModel ?? 'kiro/claude-sonnet-4.6';
+
+      if (sel) {
+        if (sel.mode === 'combo') return sel;
+        // Validate that the picked provider still exists
+        const providerStillThere = providerCatalogs.some((p) => p.id === sel.providerId);
+        if (providerStillThere) return sel;
+        // Provider gone — fall through to default
+      }
+
+      if (!ws) {
+        return { mode: 'model', providerId: PROMETHEUS_PROVIDER_ID, value: fallbackModel };
+      }
       // Show the default combo if it exists, else fall back to fallbackModel
       const hasDefaultCombo = combos.some((c) => c.slug === ws.defaultComboSlug);
       if (hasDefaultCombo) return { mode: 'combo', value: ws.defaultComboSlug };
-      return { mode: 'model', value: ws.fallbackModel };
+      return { mode: 'model', providerId: PROMETHEUS_PROVIDER_ID, value: fallbackModel };
     },
-    [combos, workspaceSelections],
+    [combos, workspaceSelections, providerCatalogs],
   );
 
   /** User picks a different combo OR model for a workspace - persist to localStorage */
@@ -770,7 +841,7 @@ export default function ChatPage() {
               key={ws.id}
               workspace={ws}
               combos={combosForWorkspace(ws.id)}
-              models={models}
+              providers={providerCatalogs}
               selection={effectiveSelection(ws.id)}
               isActive={activeWorkspace === ws.id}
               onActivate={() => activateWorkspace(ws.id)}

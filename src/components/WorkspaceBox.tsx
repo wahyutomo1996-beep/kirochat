@@ -55,19 +55,37 @@ export interface WorkspaceModelLike {
 /**
  * Selection state per workspace.
  *   - mode 'combo': value = combo slug
- *   - mode 'model': value = model id (e.g. "kiro/claude-opus-4.7")
+ *   - mode 'model': providerId + value = (which provider, which model id)
+ *
+ * Why providerId for model mode?
+ *   The chat dispatcher needs to know whether to send to the built-in
+ *   Kiro pool ('__prometheus__') or an external provider DB id. Without
+ *   it, picking a "Claude Haiku 4.5" from Genfity would route to
+ *   Kiro's haiku instead of Genfity's — same display name, different
+ *   upstream.
  */
 export type WorkspaceSelection =
   | { mode: 'combo'; value: string }
-  | { mode: 'model'; value: string };
+  | { mode: 'model'; providerId: string; value: string };
+
+/**
+ * Provider catalog passed in by the parent. One entry per provider
+ * available to this user — '__prometheus__' (Kiro pool) is always
+ * present, plus zero or more external providers from Settings.
+ */
+export interface ProviderCatalog {
+  id: string;              // '__prometheus__' or DB provider id
+  name: string;            // 'Prometheus', 'Genfity', etc.
+  models: WorkspaceModelLike[];
+}
 
 interface Props {
   workspace: WorkspaceDef;
   /** Combos available for this workspace (filtered to matching category) */
   combos: WorkspaceComboLike[];
-  /** All models available (used by the Model picker) */
-  models: WorkspaceModelLike[];
-  /** Current selection — combo slug or raw model id */
+  /** Provider catalogs the user can pick from in Model mode */
+  providers: ProviderCatalog[];
+  /** Current selection — combo slug or (provider, model) pair */
   selection: WorkspaceSelection;
   /** True if this workspace is the active one in chat */
   isActive: boolean;
@@ -80,7 +98,7 @@ interface Props {
 export function WorkspaceBox({
   workspace,
   combos,
-  models,
+  providers,
   selection,
   isActive,
   onActivate,
@@ -94,15 +112,28 @@ export function WorkspaceBox({
   const currentCombo = selection.mode === 'combo'
     ? combos.find((c) => c.slug === selection.value)
     : null;
-  const currentModel = selection.mode === 'model'
-    ? models.find((m) => m.id === selection.value)
+
+  const activeProvider = selection.mode === 'model'
+    ? providers.find((p) => p.id === selection.providerId)
     : null;
-  // Prefer the catalog displayName, else derive a clean label from the id,
-  // else fall back to the workspace's raw fallback id (rare — only when
-  // models haven't loaded yet).
+  const currentModel = selection.mode === 'model' && activeProvider
+    ? activeProvider.models.find((m) => m.id === selection.value)
+    : null;
+
+  // Pick the first valid model for a given provider — used when user
+  // switches the provider chip.
+  const firstModelOf = (providerId: string): { id: string; providerId: string } | null => {
+    const p = providers.find((x) => x.id === providerId);
+    if (!p || p.models.length === 0) return null;
+    return { id: p.models[0].id, providerId };
+  };
+
+  // Subtitle shown on the active workspace tile.
   const subtitle = currentCombo?.name
     ?? currentModel?.displayName
-    ?? formatModelDisplay(selection.mode === 'model' ? selection.value : workspace.fallbackModel);
+    ?? (selection.mode === 'model'
+      ? `${activeProvider?.name ?? 'Prometheus'} · ${formatModelDisplay(selection.value)}`
+      : formatModelDisplay(workspace.fallbackModel));
 
   return (
     <div
@@ -213,8 +244,13 @@ export function WorkspaceBox({
               onClick={(e) => {
                 e.stopPropagation();
                 if (selection.mode === 'model') return;
-                const first = models[0]?.id ?? workspace.fallbackModel;
-                onSelectionChange({ mode: 'model', value: first });
+                // Pick the first available provider's first model. Falls
+                // back to Prometheus + workspace fallback when no models
+                // have loaded yet (rare race during initial mount).
+                const firstProv = providers[0];
+                const firstModel = firstProv?.models[0]?.id ?? workspace.fallbackModel;
+                const firstId = firstProv?.id ?? '__prometheus__';
+                onSelectionChange({ mode: 'model', providerId: firstId, value: firstModel });
               }}
               className={`flex-1 px-2 py-1 text-[11px] font-medium rounded transition-all ${
                 selection.mode === 'model'
@@ -259,23 +295,70 @@ export function WorkspaceBox({
             </>
           )}
 
-          {/* Model dropdown */}
+          {/* Model selector — provider chips + filtered model dropdown */}
           {selection.mode === 'model' && (
             <>
+              {/*
+                Provider chips. Only render when user has 2+ providers
+                (e.g. just Prometheus = chips redundant). Each chip filters
+                the dropdown to that provider's models so the list stays
+                short instead of becoming a 50-item scroll.
+              */}
+              {providers.length > 1 && (
+                <div className="flex flex-wrap gap-1">
+                  {providers.map((p) => {
+                    const isActiveProvider = selection.providerId === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isActiveProvider) return;
+                          const next = firstModelOf(p.id);
+                          if (next) {
+                            onSelectionChange({
+                              mode: 'model',
+                              providerId: next.providerId,
+                              value: next.id,
+                            });
+                          }
+                        }}
+                        disabled={p.models.length === 0}
+                        className={`px-2 py-0.5 text-[11px] font-medium rounded-full border transition-all ${
+                          isActiveProvider
+                            ? 'bg-accent text-white border-accent'
+                            : 'bg-surface-2 text-ink-subtle border-hairline hover:text-ink hover:border-hairline-strong'
+                        } disabled:opacity-40 disabled:cursor-not-allowed`}
+                        title={p.models.length === 0 ? 'No models — refresh in Settings' : `${p.models.length} models`}
+                      >
+                        {p.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               <label className="sr-only" htmlFor={`model-${workspace.id}`}>
                 Model for {workspace.name}
               </label>
               <select
                 id={`model-${workspace.id}`}
                 value={selection.value}
-                onChange={(e) => onSelectionChange({ mode: 'model', value: e.target.value })}
+                onChange={(e) =>
+                  onSelectionChange({
+                    mode: 'model',
+                    providerId: selection.providerId,
+                    value: e.target.value,
+                  })
+                }
                 onClick={(e) => e.stopPropagation()}
                 className="w-full px-2 py-1.5 bg-canvas border border-hairline rounded-md text-xs text-ink focus:outline-none focus:border-hairline-strong focus:ring-2 focus:ring-accent/40"
               >
-                {models.length === 0 ? (
+                {(activeProvider?.models ?? []).length === 0 ? (
                   <option value={workspace.fallbackModel}>{formatModelDisplay(workspace.fallbackModel)}</option>
                 ) : (
-                  models.map((m) => (
+                  (activeProvider?.models ?? []).map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.displayName || formatModelDisplay(m.id)}
                     </option>
@@ -283,7 +366,9 @@ export function WorkspaceBox({
                 )}
               </select>
               <p className="text-[10px] text-ink-subtle">
-                Direct model selection — no fallback chain
+                {providers.length > 1
+                  ? `Direct model from ${activeProvider?.name ?? 'provider'} — no fallback chain`
+                  : 'Direct model selection — no fallback chain'}
               </p>
             </>
           )}
