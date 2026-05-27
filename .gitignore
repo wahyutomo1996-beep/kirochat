@@ -7,3 +7,9 @@ prisma/dev.db
 tsconfig.tsbuildinfo
 # Workflow files (added manually via web UI - PAT lacks workflow scope)
 .github/
+
+# Session continuity files — may contain credential references, prod URLs,
+# DB ids, etc. Project-scoped checkpoints stay local; backup script in
+# C:\Users\WAHANA 25\Documents\opencode-backups\ handles archival.
+SESSION-CHECKPOINT.md
+SESSION-RESUME.md
