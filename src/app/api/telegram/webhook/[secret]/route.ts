@@ -25,6 +25,7 @@ import { findModel } from '@/lib/models';
 import { recordKiroUsage } from '@/lib/kiro-pool';
 import { resolveCombo } from '@/lib/combo-dispatch';
 import { formatModelDisplay } from '@/lib/format-model';
+import { handleCommand } from '@/lib/telegram-commands';
 import {
   sendMessage,
   sendTyping,
@@ -192,9 +193,10 @@ export async function POST(
     return ack();
   }
 
-  // Slash-command shortcut: /start, /help — friendly intros so users
-  // know what they're talking to.
-  if (text === '/start' || text === '/help') {
+  // Slash-command shortcut: /start gets the friendly welcome with
+  // the current model name baked in. Other slash commands (/help,
+  // /status, /ps, /logs, /health) flow through the command dispatcher.
+  if (text === '/start') {
     const selectionForHelp = parseSelection(bot.defaultSelection);
     const modelForHelp = await resolveModel(bot.userId, selectionForHelp);
     const modelLabel = formatModelDisplay(modelForHelp);
@@ -204,10 +206,26 @@ export async function POST(
       `Halo, gw Prometheus — AI assistant yang lo akses lewat Telegram.\n\n` +
       `Kirim pesan apa aja: pertanyaan, brainstorming, code, analisa trading, atau chat biasa.\n\n` +
       `Default model: ${modelLabel}\n` +
-      `Image belum support disini, pake web buat vision: https://152-42-216-29.sslip.io/chat`,
+      `Image belum support disini, pake web buat vision: https://152-42-216-29.sslip.io/chat\n\n` +
+      `Ketik /help buat liat command server status (uptime, container, logs, dll).`,
       { replyToMessageId: message.message_id },
     );
     return ack();
+  }
+
+  // Server status commands (/status, /ps, /logs, /health, /help).
+  // Handled before AI dispatch so they're cheap (no Kiro call) and
+  // never get rephrased by the model.
+  if (text.startsWith('/')) {
+    const cmdResult = await handleCommand(text);
+    if (cmdResult.handled) {
+      await sendMessage(plainToken, message.chat.id, cmdResult.text, {
+        replyToMessageId: message.message_id,
+      });
+      return ack();
+    }
+    // Unknown command falls through to AI — model can decide if it's
+    // a typo / question / something to acknowledge.
   }
 
   // 4. Generate reply. Show typing indicator while we work.

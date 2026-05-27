@@ -18,6 +18,22 @@ services:
       - KIRO_REVIVE_COOLDOWN_HOURS=${KIRO_REVIVE_COOLDOWN_HOURS:-6}
     volumes:
       - prometheus-data:/app/data
+      # Mount Docker socket read-only so the Telegram bot can run /ps,
+      # /logs, /status, /health commands. Read-only blocks any write
+      # operation (start/stop/exec) — the bot can ONLY observe.
+      #
+      # SECURITY: Even read-only socket access lets the container see
+      # container env vars and exec history of every Docker resource on
+      # the host. Acceptable here because the only path that touches the
+      # socket is the Telegram webhook handler, which is whitelisted to
+      # your user ID + URL secret + header secret.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # Add the host's docker group so the node user can read the socket.
+    # The GID 988 is what `getent group docker` returns on this Ubuntu
+    # droplet. Override via env if you migrate to a host with a different
+    # docker group GID.
+    group_add:
+      - "${DOCKER_GID:-988}"
     restart: unless-stopped
     healthcheck:
       # Hit the real health endpoint (verifies DB connection too).
