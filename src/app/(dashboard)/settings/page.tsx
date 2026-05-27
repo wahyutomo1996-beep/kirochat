@@ -25,6 +25,7 @@ import { LoadingState } from '@/components/LoadingState';
 import { TokenDetector } from '@/components/TokenDetector';
 import { ComboPanel } from '@/components/ComboPanel';
 import { TelegramPanel } from '@/components/TelegramPanel';
+import { ProviderShareSettings } from '@/components/ProviderShareSettings';
 import { KiroUsageTracker } from '@/components/KiroUsageTracker';
 import { useAppDispatch } from '@/lib/store/hooks';
 import { showToast } from '@/lib/store/slices/uiSlice';
@@ -695,6 +696,19 @@ curl ${baseUrl}/chat/completions \\
                             ))}
                           </div>
                         </details>
+                      )}
+                      {/*
+                        Sharing controls — only render for the user's own
+                        providers (admin's view of their own row), never on
+                        catalogs surfaced from another admin's shared free
+                        tier (which are read-only here).
+                        ProviderShareSettings owns its own top-border so
+                        it stacks visually below the row contents.
+                      */}
+                      {!p.shared && p.id !== '__prometheus__' && (
+                        <div className="-mx-5 mt-4">
+                          <ProviderShareSettings provider={p} />
+                        </div>
                       )}
                     </div>
                   );

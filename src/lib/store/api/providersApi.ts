@@ -21,6 +21,14 @@ export interface Provider {
   /** Only present on the built-in Prometheus virtual provider */
   builtin?: boolean;
   accountCount?: number;
+  /** Owner has flipped 'share with all users' on this provider */
+  isShared?: boolean;
+  /** JSON-encoded array of model ids that get shared. Empty when nothing shared. */
+  sharedModels?: string;
+  /** Set by the API when this provider belongs to ANOTHER user (admin's
+   *  shared free tier surfaced into a regular user's catalog). The user
+   *  can dispatch but can't edit / delete / change share settings. */
+  shared?: boolean;
 }
 
 export interface ListProvidersResponse {
@@ -64,8 +72,16 @@ export const providersApi = baseApi.injectEndpoints({
     }),
 
     updateProvider: build.mutation<
-      Provider,
-      { id: string; isDefault?: boolean; isActive?: boolean }
+      { provider: Provider },
+      {
+        id: string;
+        isDefault?: boolean;
+        isActive?: boolean;
+        /** Owner-only: toggle shared free-tier publish */
+        isShared?: boolean;
+        /** Owner-only: array of model ids to expose when isShared=true */
+        sharedModels?: string[];
+      }
     >({
       query: ({ id, ...body }) => ({
         url: `/api/providers/${id}`,
