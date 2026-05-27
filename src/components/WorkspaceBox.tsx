@@ -129,11 +129,19 @@ export function WorkspaceBox({
   };
 
   // Subtitle shown on the active workspace tile.
-  const subtitle = currentCombo?.name
-    ?? currentModel?.displayName
-    ?? (selection.mode === 'model'
-      ? `${activeProvider?.name ?? 'Prometheus'} · ${formatModelDisplay(selection.value)}`
-      : formatModelDisplay(workspace.fallbackModel));
+  // In model mode we ALWAYS prefix the provider name (e.g. "Genfity ·
+  // Claude Haiku 4.5") so the user can tell at a glance which provider
+  // is dispatching — same model name across providers is ambiguous
+  // otherwise (Kiro and Genfity both serve "Claude Haiku 4.5").
+  const subtitle = (() => {
+    if (currentCombo) return currentCombo.name;
+    if (selection.mode === 'model') {
+      const providerName = activeProvider?.name ?? 'Prometheus';
+      const modelLabel = currentModel?.displayName ?? formatModelDisplay(selection.value);
+      return `${providerName} · ${modelLabel}`;
+    }
+    return formatModelDisplay(workspace.fallbackModel);
+  })();
 
   return (
     <div

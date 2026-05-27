@@ -52,6 +52,13 @@ interface Message {
   content: string;
   images: string;
   model: string;
+  /**
+   * Provider display name captured at send time so the assistant footer
+   * can show "Genfity · Claude Haiku 4.5" instead of just the model id.
+   * Optional because messages loaded from the server (older history)
+   * won't carry it.
+   */
+  providerName?: string;
   createdAt: string;
 }
 
@@ -144,6 +151,14 @@ export default function ChatPage() {
   const [combos, setCombos] = useState<ChatCombo[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [streamContent, setStreamContent] = useState('');
+  /**
+   * Provider + model captured at sendMessage time so we can show the
+   * user "via Genfity / Claude Haiku 4.5" while the stream is in
+   * flight, even before the first token lands. Cleared when streaming
+   * ends.
+   */
+  const [streamingProviderName, setStreamingProviderName] = useState('');
+  const [streamingModel, setStreamingModel] = useState('');
   const [routingNotice, setRoutingNotice] = useState<{ from: string; to: string; model: string } | null>(null);
   /**
    * Set when an attached image was auto-described by a vision provider
@@ -522,9 +537,20 @@ export default function ChatPage() {
     // Resolve provider+model from active workspace selection
     const { providerId, model } = resolveWorkspaceModel(activeWorkspace);
 
+    // Compute the user-visible provider name for this dispatch so we
+    // can show it in the streaming pill + assistant footer. Falls back
+    // through: provider catalog (matched by id) -> 'Combo' for combo
+    // mode -> 'Prometheus' as last resort.
+    const dispatchProviderName: string =
+      providerId === 'combo'
+        ? 'Combo'
+        : providerCatalogs.find((p) => p.id === providerId)?.name ?? 'Prometheus';
+
     const userMessage = input;
     const userImages = [...images];
     setInput(''); setImages([]); setStreaming(true); setStreamContent(''); setRoutingNotice(null); setBridgeNotice(null);
+    setStreamingProviderName(dispatchProviderName);
+    setStreamingModel(model);
 
     const tempMsg: Message = {
       id: 'temp-' + Date.now(),
@@ -626,6 +652,7 @@ export default function ChatPage() {
           content: fullContent,
           images: '[]',
           model,
+          providerName: dispatchProviderName,
           createdAt: new Date().toISOString(),
         }]);
       }
@@ -634,10 +661,6 @@ export default function ChatPage() {
       // streamed and present it as a complete (if truncated) message.
       const aborted = (err as { name?: string })?.name === 'AbortError';
       if (aborted) {
-        // Use a closure-local copy of streamContent at abort time. If
-        // we have nothing yet, drop the placeholder turn entirely.
-        // (Server-side conversation may already have a partial assistant
-        // turn — we let the next refetch reconcile.)
         const partial = streamContent;
         if (partial) {
           setMessages((prev) => [...prev, {
@@ -646,6 +669,7 @@ export default function ChatPage() {
             content: partial + '\n\n_(stopped)_',
             images: '[]',
             model,
+            providerName: dispatchProviderName,
             createdAt: new Date().toISOString(),
           }]);
         }
@@ -657,6 +681,8 @@ export default function ChatPage() {
       abortRef.current = null;
       setStreaming(false);
       setStreamContent('');
+      setStreamingProviderName('');
+      setStreamingModel('');
       fetchConversations();
     }
   };
@@ -1082,7 +1108,22 @@ export default function ChatPage() {
                         <div className="prose">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                         </div>
-                        <div className="mt-2 text-[11px] text-ink-subtle" title={msg.model}>{formatModelDisplay(msg.model)}</div>
+                        {/*
+                          Footer shows "Provider · Model" when we know
+                          the provider (newer messages tagged at send
+                          time), else just the formatted model. Server-
+                          loaded history won't have providerName so
+                          formatModelDisplay alone is the fallback.
+                        */}
+                        <div className="mt-2 text-[11px] text-ink-subtle inline-flex items-center gap-1.5" title={msg.model}>
+                          {msg.providerName && (
+                            <>
+                              <span className="font-medium text-ink-muted">{msg.providerName}</span>
+                              <span className="text-ink-subtle/60">·</span>
+                            </>
+                          )}
+                          <span>{formatModelDisplay(msg.model)}</span>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1136,6 +1177,23 @@ export default function ChatPage() {
                       </span>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/*
+                In-flight provider+model pill. Tells the user "Genfity ·
+                Claude Haiku 4.5 is replying" the instant they hit
+                send — no waiting for the first token to confirm where
+                their request went.
+              */}
+              {streaming && streamingProviderName && (
+                <div className="animate-fade-in">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-surface-2 border border-hairline rounded-full text-[11px] text-ink-muted">
+                    <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'rgba(var(--ws-active-glow) / 0.9)' }}></span>
+                    <span className="font-medium text-ink">{streamingProviderName}</span>
+                    <span className="text-ink-subtle/60">·</span>
+                    <span title={streamingModel}>{formatModelDisplay(streamingModel)}</span>
+                  </div>
                 </div>
               )}
 
