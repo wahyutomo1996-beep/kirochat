@@ -10,6 +10,7 @@ import { WorkspaceBox, type WorkspaceSelection, type WorkspaceModelLike } from '
 import { UserPill } from '@/components/UserPill';
 import { isKiroBacked, pickVisionFallback, type ProviderLike } from '@/lib/vision';
 import { WORKSPACES, findWorkspace, normalizeWorkspaceId } from '@/lib/workspaces';
+import { formatModelDisplay } from '@/lib/format-model';
 
 /*
  * Side panels are workspace-specific and lazy-loaded — no need to ship
@@ -889,7 +890,7 @@ export default function ChatPage() {
                         <div className="prose">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                         </div>
-                        <div className="mt-2 text-[11px] text-txt-faint font-mono">{msg.model}</div>
+                        <div className="mt-2 text-[11px] text-ink-subtle" title={msg.model}>{formatModelDisplay(msg.model)}</div>
                       </div>
                     </div>
                   )}
@@ -903,7 +904,7 @@ export default function ChatPage() {
                     <span>
                       Image detected. {routingNotice.from} can&apos;t see images, so this message routes to{' '}
                       <span className="font-medium text-blue-200">{routingNotice.to}</span>
-                      {' '}<span className="text-blue-400/60">({routingNotice.model})</span>
+                      {' '}<span className="text-blue-400/60">({formatModelDisplay(routingNotice.model)})</span>
                     </span>
                   </div>
                 </div>
@@ -995,7 +996,7 @@ export default function ChatPage() {
               <p className="mt-2 text-[11px] text-blue-300/90 leading-relaxed">
                 <span className="font-medium">Heads up:</span> {activeWs?.name} workspace can&apos;t see images.
                 This message will route to <span className="text-blue-200 font-medium">{visionFallback.provider.name}</span>{' '}
-                <span className="text-blue-400/60">({visionFallback.model})</span> instead.
+                <span className="text-blue-400/60">({formatModelDisplay(visionFallback.model)})</span> instead.
               </p>
             )}
             {imagesWillFail && (

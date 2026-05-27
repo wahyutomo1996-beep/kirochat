@@ -18,6 +18,7 @@
 
 import { useState } from 'react';
 import type { WorkspaceDef } from '@/lib/workspaces';
+import { formatModelDisplay } from '@/lib/format-model';
 
 /**
  * Per-workspace accent color tokens. These map to the CSS variables defined
@@ -96,9 +97,12 @@ export function WorkspaceBox({
   const currentModel = selection.mode === 'model'
     ? models.find((m) => m.id === selection.value)
     : null;
+  // Prefer the catalog displayName, else derive a clean label from the id,
+  // else fall back to the workspace's raw fallback id (rare — only when
+  // models haven't loaded yet).
   const subtitle = currentCombo?.name
     ?? currentModel?.displayName
-    ?? workspace.fallbackModel;
+    ?? formatModelDisplay(selection.mode === 'model' ? selection.value : workspace.fallbackModel);
 
   return (
     <div
@@ -266,14 +270,14 @@ export function WorkspaceBox({
                 value={selection.value}
                 onChange={(e) => onSelectionChange({ mode: 'model', value: e.target.value })}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full px-2 py-1.5 bg-canvas border border-hairline rounded-md text-xs text-ink focus:outline-none focus:border-hairline-strong focus:ring-2 focus:ring-accent/40 font-mono"
+                className="w-full px-2 py-1.5 bg-canvas border border-hairline rounded-md text-xs text-ink focus:outline-none focus:border-hairline-strong focus:ring-2 focus:ring-accent/40"
               >
                 {models.length === 0 ? (
-                  <option value={workspace.fallbackModel}>{workspace.fallbackModel}</option>
+                  <option value={workspace.fallbackModel}>{formatModelDisplay(workspace.fallbackModel)}</option>
                 ) : (
                   models.map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.displayName} ({m.id})
+                      {m.displayName || formatModelDisplay(m.id)}
                     </option>
                   ))
                 )}

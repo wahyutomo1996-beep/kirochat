@@ -18,6 +18,7 @@ import { Button } from '@/components/Button';
 import { Badge } from '@/components/Badge';
 import { useAppDispatch } from '@/lib/store/hooks';
 import { showToast } from '@/lib/store/slices/uiSlice';
+import { formatModelDisplay } from '@/lib/format-model';
 import {
   useListCombosQuery,
   useListComboTemplatesQuery,
@@ -278,8 +279,8 @@ export function ComboPanel({ providers }: Props) {
                   </summary>
                   <ol className="mt-1 space-y-0.5 pl-3 list-decimal text-[11px] text-txt-secondary">
                     {tpl.steps.map((s, i) => (
-                      <li key={i} className="font-mono truncate">
-                        {s.label || s.model}
+                      <li key={i} className="truncate">
+                        {s.label || formatModelDisplay(s.model)}
                       </li>
                     ))}
                   </ol>
@@ -370,7 +371,7 @@ export function ComboPanel({ providers }: Props) {
                       <option value="">— Select model —</option>
                       {getProviderModels(step.providerId).map((m) => (
                         <option key={m} value={m}>
-                          {m}
+                          {formatModelDisplay(m)}
                         </option>
                       ))}
                     </select>
@@ -442,10 +443,10 @@ export function ComboPanel({ providers }: Props) {
                     </summary>
                     <ol className="mt-1 space-y-0.5 pl-3 list-decimal text-[11px] text-txt-secondary">
                       {combo.steps.map((s, i) => (
-                        <li key={i} className="font-mono">
+                        <li key={i}>
                           <span className="text-txt-faint">{s.providerId === '__prometheus__' ? 'Prometheus' : s.providerId.slice(0, 8)}</span>
                           {' / '}
-                          <span className="text-white">{s.model}</span>
+                          <span className="text-white">{formatModelDisplay(s.model)}</span>
                           {s.label && <span className="text-txt-faint"> — {s.label}</span>}
                         </li>
                       ))}

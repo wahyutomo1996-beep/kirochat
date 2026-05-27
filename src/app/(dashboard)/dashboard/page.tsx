@@ -18,6 +18,7 @@ import { Button } from '@/components/Button';
 import { Badge } from '@/components/Badge';
 import { LoadingState } from '@/components/LoadingState';
 import { KiroUsageTracker } from '@/components/KiroUsageTracker';
+import { formatModelDisplay } from '@/lib/format-model';
 import {
   useGetDashboardQuery,
   type DashboardRange,
@@ -154,7 +155,7 @@ export default function DashboardPage() {
                   return (
                     <div key={i}>
                       <div className="flex items-center justify-between text-xs mb-1.5">
-                        <span className="text-ink font-medium font-mono truncate pr-2" title={m.model}>{m.model}</span>
+                        <span className="text-ink font-medium truncate pr-2" title={m.model}>{formatModelDisplay(m.model)}</span>
                         <span className="text-ink-subtle shrink-0">{m.requests} req · {formatCost(m.cost)}</span>
                       </div>
                       <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
@@ -235,7 +236,7 @@ export default function DashboardPage() {
                         })}
                       </td>
                       <td className="px-5 py-3 text-xs text-ink">{r.providerName}</td>
-                      <td className="px-5 py-3 text-xs text-ink-muted font-mono">{r.model}</td>
+                      <td className="px-5 py-3 text-xs text-ink-muted" title={r.model}>{formatModelDisplay(r.model)}</td>
                       <td className="px-5 py-3 text-xs text-ink text-right tabular-nums">{formatNumber(r.tokens)}</td>
                       <td className="px-5 py-3 text-xs text-ink-muted text-right tabular-nums">{r.latencyMs}ms</td>
                       <td className="px-5 py-3 text-xs text-ink text-right tabular-nums">{formatCost(r.cost)}</td>
